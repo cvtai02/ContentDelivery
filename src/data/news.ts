@@ -1,0 +1,60 @@
+import type { NewsItem } from '@/types/news';
+
+export const NEWS_ITEMS: NewsItem[] = [
+  {
+    id: '1',
+    emoji: '🏭',
+    title: 'Xuất khẩu điện tử Việt Nam đạt kỷ lục 52 tỷ USD trong 4 tháng đầu năm',
+    source: 'VnEconomy',
+    time: '2 giờ trước',
+    url: 'https://vneconomy.vn',
+  },
+  {
+    id: '2',
+    emoji: '🚢',
+    title: 'Cảng Hải Phòng: Lượng hàng container tăng 18% so với cùng kỳ năm ngoái',
+    source: 'CafeF',
+    time: '3 giờ trước',
+    url: 'https://cafef.vn',
+  },
+  {
+    id: '3',
+    emoji: '🏗️',
+    title: 'FDI vào Việt Nam quý 1/2026 đạt 7,2 tỷ USD, tăng 12% so với cùng kỳ',
+    source: 'Thanh Niên',
+    time: '4 giờ trước',
+    url: 'https://thanhnien.vn/kinh-te',
+  },
+  {
+    id: '4',
+    emoji: '💹',
+    title: 'Ngân hàng Nhà nước hạ lãi suất điều hành xuống 4,0%, hỗ trợ tăng trưởng',
+    source: 'VnExpress',
+    time: '5 giờ trước',
+    url: 'https://vnexpress.net/kinh-doanh',
+  },
+  {
+    id: '5',
+    emoji: '🛒',
+    title: 'Thương mại điện tử Việt Nam dự kiến đạt 38 tỷ USD vào cuối 2026',
+    source: 'DanTri',
+    time: '6 giờ trước',
+    url: 'https://dantri.com.vn/kinh-doanh',
+  },
+  {
+    id: '6',
+    emoji: '⚡',
+    title: 'EVN ký kết hợp đồng mua điện với 5 dự án năng lượng tái tạo mới',
+    source: 'Tuổi Trẻ',
+    time: '7 giờ trước',
+    url: 'https://tuoitre.vn/kinh-te',
+  },
+  {
+    id: '7',
+    emoji: '🤝',
+    title: 'Việt Nam – EU thúc đẩy hợp tác công nghệ xanh trong khuôn khổ EVFTA',
+    source: 'VnEconomy',
+    time: '8 giờ trước',
+    url: 'https://vneconomy.vn',
+  },
+];
