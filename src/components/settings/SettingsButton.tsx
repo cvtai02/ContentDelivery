@@ -2,15 +2,18 @@
 
 import { useState } from 'react';
 import { SettingsDialog } from './SettingsDialog';
+import { SectionSettingsDialog } from './SectionSettingsDialog';
 
-export function SettingsButton() {
+type Props = { section?: string; label?: string };
+
+export function SettingsButton({ section, label }: Props) {
   const [open, setOpen] = useState(false);
 
   return (
     <>
       <button
         onClick={() => setOpen(true)}
-        title="Quản lý Facebook targets"
+        title={section ? `${label ?? section} settings` : 'App Settings'}
         className="text-muted hover:text-primary transition-colors cursor-pointer bg-transparent border-none p-0.5"
       >
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -19,7 +22,8 @@ export function SettingsButton() {
         </svg>
       </button>
 
-      {open && <SettingsDialog onClose={() => setOpen(false)} />}
+      {open && !section && <SettingsDialog onClose={() => setOpen(false)} />}
+      {open && section && <SectionSettingsDialog section={section} label={label ?? section} onClose={() => setOpen(false)} />}
     </>
   );
 }

@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < comments.length; i++) {
       const c = comments[i];
       const commentBody = c.body.trim().replace(/\n{3,}/g, '\n\n');
-      const parts = [`Comment ${i + 1}. ${c.author} - ${c.score} likes.\n${commentBody}`];
+      const parts = [`---------\n${i + 1}. ${c.author} - ${c.score} likes.\n${commentBody}`];
 
       for (const r of top2Replies.filter((r) => r.parentIdx === i)) {
         const replyBody = r.body.trim().replace(/\n{3,}/g, '\n\n');

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ComposeImagePreview } from '@/components/shared/ComposeImagePreview';
+import { SettingsButton } from '@/components/settings/SettingsButton';
 
 type RedditPost = {
   id: string;
@@ -49,18 +50,28 @@ function Skeleton({ count }: { count: number }) {
   );
 }
 
-function ComposeDialog({ target, onClose }: { target: ComposeTarget; onClose: () => void }) {
-  const [content, setContent] = useState('');
-  const [generating, setGenerating] = useState(true);
+type PostState = { status: 'generating' | 'ready' | 'error'; content: string; imageUrl: string | null; error: string };
+
+function ComposeDialog({
+  target,
+  initialContent,
+  initialImageUrl,
+  onClose,
+}: {
+  target: ComposeTarget;
+  initialContent: string;
+  initialImageUrl: string | null;
+  onClose: () => void;
+}) {
+  const [content, setContent] = useState(initialContent);
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState('');
   const [postUrl, setPostUrl] = useState('');
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imageLoading, setImageLoading] = useState(true);
+  const [imageUrl, setImageUrl] = useState<string | null>(initialImageUrl);
+  const [imageLoading, setImageLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const title = target.kind === 'reddit' ? target.post.title : target.question.title;
-
 
   const fetchImage = useCallback((q: string) => {
     setImageLoading(true);
@@ -71,40 +82,6 @@ function ComposeDialog({ target, onClose }: { target: ComposeTarget; onClose: ()
       .catch(() => {})
       .finally(() => setImageLoading(false));
   }, []);
-
-  useEffect(() => { fetchImage(title); }, [title, fetchImage]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setGenerating(true);
-    setError('');
-    setPostUrl('');
-
-    const [url, body] =
-      target.kind === 'reddit'
-        ? ['/api/reddit/compose', { postId: target.post.id, subreddit: 'travel', title }]
-        : ['/api/zhihu/compose', { questionId: target.question.id, title }];
-
-    fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data.error) throw new Error(data.error);
-        setContent(data.content ?? '');
-        setGenerating(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Không tạo được bài viết');
-        setGenerating(false);
-      });
-
-    return () => { cancelled = true; };
-  }, [target, title]);
 
   async function postToFacebook() {
     setPosting(true);
@@ -138,29 +115,19 @@ function ComposeDialog({ target, onClose }: { target: ComposeTarget; onClose: ()
             </p>
             <p className="line-clamp-2 text-sm font-semibold text-primary">{title}</p>
           </div>
-          <button onClick={onClose} className="shrink-0 text-muted hover:text-primary cursor-pointer bg-transparent border-none text-lg leading-none">
-            ✕
-          </button>
+          <button onClick={onClose} className="shrink-0 text-muted hover:text-primary cursor-pointer bg-transparent border-none text-lg leading-none">✕</button>
         </div>
 
         <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto px-6 py-4">
           <ComposeImagePreview imageUrl={imageUrl} imageLoading={imageLoading} onRefresh={() => fetchImage(title)} />
-
-          {generating ? (
-            <div className="flex flex-col gap-2">
-              <div className="h-4 w-1/3 animate-pulse rounded bg-surface" />
-              <div className="h-32 animate-pulse rounded-xl bg-surface" />
-            </div>
-          ) : (
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              style={{ fieldSizing: 'content' } as any}
-              className="w-full resize-none min-h-[200px] rounded-xl border border-divider bg-surface p-3 text-sm text-primary outline-none focus:border-accent"
-            />
-          )}
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            style={{ fieldSizing: 'content' } as any}
+            className="w-full resize-none min-h-[200px] rounded-xl border border-divider bg-surface p-3 text-sm text-primary outline-none focus:border-accent"
+          />
         </div>
 
         <div className="flex flex-col gap-2 p-6 pt-0">
@@ -171,12 +138,10 @@ function ComposeDialog({ target, onClose }: { target: ComposeTarget; onClose: ()
             </a>
           )}
           <div className="flex justify-end gap-2">
-            <button onClick={onClose} className="rounded-lg border border-divider px-3 py-1.5 text-xs font-semibold text-muted hover:text-primary cursor-pointer bg-transparent">
-              Đóng
-            </button>
+            <button onClick={onClose} className="rounded-lg border border-divider px-3 py-1.5 text-xs font-semibold text-muted hover:text-primary cursor-pointer bg-transparent">Đóng</button>
             <button
               onClick={postToFacebook}
-              disabled={generating || posting || !content}
+              disabled={posting || !content}
               className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-50 cursor-pointer"
             >
               {posting ? 'Đang đăng...' : 'Đăng Facebook'}
@@ -190,7 +155,7 @@ function ComposeDialog({ target, onClose }: { target: ComposeTarget; onClose: ()
 
 const SELECT_CLS = 'text-xs text-muted outline-none bg-transparent border-none cursor-pointer appearance-none underline underline-offset-2';
 
-function RedditTravelSection({ onCompose }: { onCompose: (post: RedditPost) => void }) {
+function RedditTravelSection({ postStates, onStartGeneration, onView }: { postStates: Record<string, PostState>; onStartGeneration: (post: RedditPost) => void; onView: (post: RedditPost) => void }) {
   const [posts, setPosts] = useState<RedditPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [t, setT] = useState('week');
@@ -235,12 +200,16 @@ function RedditTravelSection({ onCompose }: { onCompose: (post: RedditPost) => v
                   ▲ {formatCount(post.score)} · 💬 {formatCount(post.comments)}
                   {post.createdUtc ? ` · ${timeAgo(post.createdUtc)} ago` : ''}
                 </span>
-                <button
-                  onClick={() => onCompose(post)}
-                  className="ml-auto shrink-0 rounded-lg bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent hover:bg-accent/20 transition-colors cursor-pointer"
-                >
-                  Tạo bài viết
-                </button>
+                {!postStates[post.id] && (
+                  <button onClick={() => onStartGeneration(post)} className="ml-auto shrink-0 rounded-lg bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent hover:bg-accent/20 transition-colors cursor-pointer">Tạo bài viết</button>
+                )}
+                {postStates[post.id]?.status === 'generating' && <span className="ml-auto shrink-0 text-[11px] text-muted">Đang tạo...</span>}
+                {postStates[post.id]?.status === 'ready' && (
+                  <button onClick={() => onView(post)} className="ml-auto shrink-0 rounded-lg bg-accent px-2 py-0.5 text-[11px] font-semibold text-black hover:opacity-90 transition-opacity cursor-pointer">Xem bài viết</button>
+                )}
+                {postStates[post.id]?.status === 'error' && (
+                  <button onClick={() => onStartGeneration(post)} className="ml-auto shrink-0 rounded-lg bg-fall/10 px-2 py-0.5 text-[11px] font-semibold text-fall hover:bg-fall/20 transition-colors cursor-pointer">Thử lại</button>
+                )}
               </div>
               <a href={post.url} target="_blank" rel="noreferrer" className="truncate text-sm font-semibold text-primary hover:underline block">
                 {post.title}
@@ -253,7 +222,7 @@ function RedditTravelSection({ onCompose }: { onCompose: (post: RedditPost) => v
   );
 }
 
-function ZhihuTravelSection({ onCompose }: { onCompose: (q: ZhihuQuestion) => void }) {
+function ZhihuTravelSection({ postStates, onStartGeneration, onView }: { postStates: Record<string, PostState>; onStartGeneration: (q: ZhihuQuestion) => void; onView: (q: ZhihuQuestion) => void }) {
   const [questions, setQuestions] = useState<ZhihuQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [limit, setLimit] = useState(5);
@@ -284,12 +253,16 @@ function ZhihuTravelSection({ onCompose }: { onCompose: (q: ZhihuQuestion) => vo
               )}
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] text-muted truncate">{q.heat}</span>
-                <button
-                  onClick={() => onCompose(q)}
-                  className="ml-auto shrink-0 rounded-lg bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent hover:bg-accent/20 transition-colors cursor-pointer"
-                >
-                  Tạo bài viết
-                </button>
+                {!postStates[q.id] && (
+                  <button onClick={() => onStartGeneration(q)} className="ml-auto shrink-0 rounded-lg bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent hover:bg-accent/20 transition-colors cursor-pointer">Tạo bài viết</button>
+                )}
+                {postStates[q.id]?.status === 'generating' && <span className="ml-auto shrink-0 text-[11px] text-muted">Đang tạo...</span>}
+                {postStates[q.id]?.status === 'ready' && (
+                  <button onClick={() => onView(q)} className="ml-auto shrink-0 rounded-lg bg-accent px-2 py-0.5 text-[11px] font-semibold text-black hover:opacity-90 transition-opacity cursor-pointer">Xem bài viết</button>
+                )}
+                {postStates[q.id]?.status === 'error' && (
+                  <button onClick={() => onStartGeneration(q)} className="ml-auto shrink-0 rounded-lg bg-fall/10 px-2 py-0.5 text-[11px] font-semibold text-fall hover:bg-fall/20 transition-colors cursor-pointer">Thử lại</button>
+                )}
               </div>
               <a href={q.url} target="_blank" rel="noreferrer" className="truncate text-sm font-semibold text-primary hover:underline block">
                 {q.title}
@@ -303,16 +276,67 @@ function ZhihuTravelSection({ onCompose }: { onCompose: (q: ZhihuQuestion) => vo
 }
 
 export function GetGoHotList() {
-  const [compose, setCompose] = useState<ComposeTarget | null>(null);
+  const [postStates, setPostStates] = useState<Record<string, PostState>>({});
+  const [viewing, setViewing] = useState<ComposeTarget | null>(null);
+
+  async function startGeneration(target: ComposeTarget) {
+    const id = target.kind === 'reddit' ? target.post.id : target.question.id;
+    const title = target.kind === 'reddit' ? target.post.title : target.question.title;
+    const [url, body] = target.kind === 'reddit'
+      ? ['/api/reddit/compose', { postId: id, subreddit: 'travel', title }]
+      : ['/api/zhihu/compose', { questionId: id, title }];
+
+    setPostStates((prev) => ({ ...prev, [id]: { status: 'generating', content: '', imageUrl: null, error: '' } }));
+
+    try {
+      const [composeRes, imageRes] = await Promise.all([
+        fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json()),
+        fetch(`/api/image/find?q=${encodeURIComponent('travel ' + title)}`).then((r) => r.json()),
+      ]);
+
+      if (composeRes.error) throw new Error(composeRes.error);
+
+      setPostStates((prev) => ({
+        ...prev,
+        [id]: { status: 'ready', content: composeRes.content ?? '', imageUrl: imageRes.url ?? null, error: '' },
+      }));
+    } catch (err) {
+      setPostStates((prev) => ({
+        ...prev,
+        [id]: { status: 'error', content: '', imageUrl: null, error: err instanceof Error ? err.message : 'Lỗi' },
+      }));
+    }
+  }
+
+  const viewingId = viewing ? (viewing.kind === 'reddit' ? viewing.post.id : viewing.question.id) : null;
+  const viewingState = viewingId ? postStates[viewingId] : null;
 
   return (
     <>
       <div className="card h-full">
-        <div className="section-label">Gét gô</div>
-        <RedditTravelSection onCompose={(post) => setCompose({ kind: 'reddit', post })} />
-        <ZhihuTravelSection onCompose={(q) => setCompose({ kind: 'zhihu', question: q })} />
+        <div className="section-label">
+          Gét gô
+          <SettingsButton section="getgo" label="Gét gô" />
+        </div>
+        <RedditTravelSection
+          postStates={postStates}
+          onStartGeneration={(post) => startGeneration({ kind: 'reddit', post })}
+          onView={(post) => setViewing({ kind: 'reddit', post })}
+        />
+        <ZhihuTravelSection
+          postStates={postStates}
+          onStartGeneration={(q) => startGeneration({ kind: 'zhihu', question: q })}
+          onView={(q) => setViewing({ kind: 'zhihu', question: q })}
+        />
       </div>
-      {compose && <ComposeDialog target={compose} onClose={() => setCompose(null)} />}
+      {viewing && viewingState?.status === 'ready' && (
+        <ComposeDialog
+          target={viewing}
+          initialContent={viewingState.content}
+          initialImageUrl={viewingState.imageUrl}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </>
   );
 }

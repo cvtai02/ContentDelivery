@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     answers.forEach((a, i) => {
       const label = a.accepted ? `✓ ${a.author}` : a.author;
-      lines.push(`Comment ${i + 1}. ${label} - ${a.score} likes.\n${a.body}`);
+      lines.push(`---------\n${i + 1}. ${label} - ${a.score} likes.\n${a.body}`);
     });
 
     const raw = lines.join('\n\n');

@@ -85,24 +85,19 @@ export async function publishTodayPostToFacebook(post: TodayPost, targetId?: str
 export async function publishWithImageToFacebook(message: string, imageUrl: string, targetId?: string) {
   const target = getTarget(targetId);
 
-  let imageBuffer: Buffer;
-  let mimeType: string;
-
-  if (imageUrl.startsWith('data:')) {
-    const [header, b64] = imageUrl.split(',');
-    mimeType = header.match(/:(.*?);/)?.[1] ?? 'image/png';
-    imageBuffer = Buffer.from(b64, 'base64');
-  } else {
-    const res = await fetch(imageUrl);
-    if (!res.ok) throw new Error(`Failed to download image: ${res.status}`);
-    mimeType = res.headers.get('content-type') ?? 'image/jpeg';
-    imageBuffer = Buffer.from(await res.arrayBuffer());
-  }
-
   const form = new FormData();
   form.append('message', message);
   form.append('access_token', target.token);
-  form.append('source', new Blob([imageBuffer], { type: mimeType }), 'post-image.jpg');
+
+  if (imageUrl.startsWith('data:')) {
+    const [header, b64] = imageUrl.split(',');
+    const mimeType = header.match(/:(.*?);/)?.[1] ?? 'image/png';
+    const imageBuffer = Buffer.from(b64, 'base64');
+    form.append('source', new Blob([imageBuffer], { type: mimeType }), 'post-image.jpg');
+  } else {
+    // Let Facebook fetch the image from the URL — avoids uploading large binary data
+    form.append('url', imageUrl);
+  }
 
   const res = await fetch(`${GRAPH_BASE_URL}/${target.id}/photos`, {
     method: 'POST',

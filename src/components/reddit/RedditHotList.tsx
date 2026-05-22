@@ -66,21 +66,23 @@ function PostTitle({ post }: { post: RedditPost }) {
 function ComposeDialog({
   state,
   subreddit,
+  initialContent,
+  initialImageUrl,
   onClose,
 }: {
   state: ComposeState;
   subreddit: string;
+  initialContent: string;
+  initialImageUrl: string | null;
   onClose: () => void;
 }) {
-  const [content, setContent] = useState('');
-  const [generating, setGenerating] = useState(true);
+  const [content, setContent] = useState(initialContent);
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState('');
   const [postUrl, setPostUrl] = useState('');
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imageLoading, setImageLoading] = useState(true);
+  const [imageUrl, setImageUrl] = useState<string | null>(initialImageUrl);
+  const [imageLoading, setImageLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
 
   const fetchImage = useCallback((title: string) => {
     setImageLoading(true);
@@ -91,41 +93,6 @@ function ComposeDialog({
       .catch(() => {})
       .finally(() => setImageLoading(false));
   }, []);
-
-  useEffect(() => {
-    fetchImage(state.post.title);
-  }, [state.post.title, fetchImage]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setGenerating(true);
-    setError('');
-    setPostUrl('');
-
-    fetch('/api/reddit/compose', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        postId: state.post.id,
-        subreddit,
-        title: state.post.title,
-      }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data.error) throw new Error(data.error);
-        setContent(data.content ?? '');
-        setGenerating(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Không tạo được bài viết');
-        setGenerating(false);
-      });
-
-    return () => { cancelled = true; };
-  }, [state.post.id, subreddit, state.post.title]);
 
   async function postToFacebook() {
     setPosting(true);
@@ -152,7 +119,6 @@ function ComposeDialog({
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="flex w-full max-w-3xl flex-col rounded-2xl bg-panel shadow-2xl max-h-[90vh]">
-        {/* Header — fixed */}
         <div className="flex items-start gap-3 p-6 pb-0">
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold text-accent">r/{subreddit}</p>
@@ -166,32 +132,22 @@ function ComposeDialog({
           </button>
         </div>
 
-        {/* Scrollable body — image + textarea */}
         <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto px-6 py-4">
           <ComposeImagePreview
             imageUrl={imageUrl}
             imageLoading={imageLoading}
             onRefresh={() => fetchImage(state.post.title)}
           />
-
-          {generating ? (
-            <div className="flex flex-col gap-2">
-              <div className="h-4 w-1/3 animate-pulse rounded bg-surface" />
-              <div className="h-32 animate-pulse rounded-xl bg-surface" />
-            </div>
-          ) : (
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              style={{ fieldSizing: 'content' } as any}
-              className="w-full resize-none min-h-[200px] rounded-xl border border-divider bg-surface p-3 text-sm text-primary outline-none focus:border-accent"
-            />
-          )}
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            style={{ fieldSizing: 'content' } as any}
+            className="w-full resize-none min-h-[200px] rounded-xl border border-divider bg-surface p-3 text-sm text-primary outline-none focus:border-accent"
+          />
         </div>
 
-        {/* Footer — fixed */}
         <div className="flex flex-col gap-2 p-6 pt-0">
           {error && <p className="text-xs text-fall">{error}</p>}
           {postUrl && (
@@ -208,7 +164,7 @@ function ComposeDialog({
             </button>
             <button
               onClick={postToFacebook}
-              disabled={generating || posting || !content}
+              disabled={posting || !content}
               className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-50 cursor-pointer"
             >
               {posting ? 'Đang đăng...' : 'Đăng Facebook'}
@@ -223,14 +179,20 @@ function ComposeDialog({
 const SELECT_T_CLS = 'min-w-[3.5rem] text-center text-xs normal-case text-muted outline-none bg-transparent border-none cursor-pointer appearance-none underline underline-offset-2';
 const SELECT_N_CLS = 'min-w-[2rem] text-center text-xs normal-case text-muted outline-none bg-transparent border-none cursor-pointer appearance-none underline underline-offset-2';
 
+type PostState = { status: 'generating' | 'ready' | 'error'; content: string; imageUrl: string | null; error: string };
+
 function SubredditSection({
   subreddit,
   refreshTick,
-  onCompose,
+  postStates,
+  onStartGeneration,
+  onView,
 }: {
   subreddit: string;
   refreshTick: number;
-  onCompose: (post: RedditPost) => void;
+  postStates: Record<string, PostState>;
+  onStartGeneration: (post: RedditPost) => void;
+  onView: (post: RedditPost) => void;
 }) {
   const [t, setT] = useState('day');
   const [limit, setLimit] = useState(1);
@@ -286,12 +248,24 @@ function SubredditSection({
                   ▲ {formatCount(post.score)} pts · 💬 {formatCount(post.comments)} comments
                   {post.createdUtc ? ` · ${timeAgo(post.createdUtc)} ago` : ''}
                 </span>
-                <button
-                  onClick={() => onCompose(post)}
-                  className="ml-auto shrink-0 rounded-lg bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent hover:bg-accent/20 transition-colors cursor-pointer"
-                >
-                  Tạo bài viết
-                </button>
+                {!postStates[post.id] && (
+                  <button onClick={() => onStartGeneration(post)} className="ml-auto shrink-0 rounded-lg bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent hover:bg-accent/20 transition-colors cursor-pointer">
+                    Tạo bài viết
+                  </button>
+                )}
+                {postStates[post.id]?.status === 'generating' && (
+                  <span className="ml-auto shrink-0 text-[11px] text-muted">Đang tạo...</span>
+                )}
+                {postStates[post.id]?.status === 'ready' && (
+                  <button onClick={() => onView(post)} className="ml-auto shrink-0 rounded-lg bg-accent px-2 py-0.5 text-[11px] font-semibold text-black hover:opacity-90 transition-opacity cursor-pointer">
+                    Xem bài viết
+                  </button>
+                )}
+                {postStates[post.id]?.status === 'error' && (
+                  <button onClick={() => onStartGeneration(post)} className="ml-auto shrink-0 rounded-lg bg-fall/10 px-2 py-0.5 text-[11px] font-semibold text-fall hover:bg-fall/20 transition-colors cursor-pointer">
+                    Thử lại
+                  </button>
+                )}
               </div>
               {/* Title line */}
               <PostTitle post={post} />
@@ -305,34 +279,71 @@ function SubredditSection({
 
 export function RedditHotList() {
   const [refreshTick, setRefreshTick] = useState(0);
-  const [composeState, setComposeState] = useState<ComposeState | null>(null);
+  const [postStates, setPostStates] = useState<Record<string, PostState>>({});
+  const [viewing, setViewing] = useState<ComposeState | null>(null);
 
   useEffect(() => {
     const interval = setInterval(() => setRefreshTick((v) => v + 1), 5 * 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
-  function handleCompose(post: RedditPost) {
-    setComposeState({ post, subreddit: post.subreddit ?? 'AskReddit' });
+  async function startGeneration(post: RedditPost) {
+    const id = post.id;
+    const subreddit = post.subreddit ?? 'AskReddit';
+    setPostStates((prev) => ({ ...prev, [id]: { status: 'generating', content: '', imageUrl: null, error: '' } }));
+
+    try {
+      const [composeRes, imageRes] = await Promise.all([
+        fetch('/api/reddit/compose', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ postId: id, subreddit, title: post.title }),
+        }).then((r) => r.json()),
+        fetch(`/api/image/find?q=${encodeURIComponent(post.title)}`).then((r) => r.json()),
+      ]);
+
+      if (composeRes.error) throw new Error(composeRes.error);
+
+      setPostStates((prev) => ({
+        ...prev,
+        [id]: { status: 'ready', content: composeRes.content ?? '', imageUrl: imageRes.url ?? null, error: '' },
+      }));
+    } catch (err) {
+      setPostStates((prev) => ({
+        ...prev,
+        [id]: { status: 'error', content: '', imageUrl: null, error: err instanceof Error ? err.message : 'Lỗi' },
+      }));
+    }
   }
+
+  const viewingState = viewing ? postStates[viewing.post.id] : null;
 
   return (
     <>
       <div className="card h-full">
         <div className="section-label">
           Reddit
-          <SettingsButton />
+          <SettingsButton section="reddit" label="Reddit" />
         </div>
         {SUBREDDITS.map((sub) => (
-          <SubredditSection key={sub} subreddit={sub} refreshTick={refreshTick} onCompose={handleCompose} />
+          <SubredditSection
+            key={sub}
+            subreddit={sub}
+            refreshTick={refreshTick}
+            postStates={postStates}
+            onStartGeneration={startGeneration}
+            onView={(post) => setViewing({ post, subreddit: post.subreddit ?? 'AskReddit' })}
+          />
         ))}
       </div>
 
-      {composeState && (
+      {viewing && viewingState?.status === 'ready' && (
         <ComposeDialog
-          state={composeState}
-          subreddit={composeState.subreddit}
-          onClose={() => setComposeState(null)}
+          state={viewing}
+          subreddit={viewing.subreddit}
+          initialContent={viewingState.content}
+          initialImageUrl={viewingState.imageUrl}
+          onClose={() => setViewing(null)}
         />
       )}
     </>

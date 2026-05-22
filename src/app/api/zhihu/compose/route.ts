@@ -22,12 +22,14 @@ function stripHtml(html: string): string {
 }
 
 async function fetchTopAnswers(questionId: string) {
+  const cookie = process.env.ZHIHU_COOKIE;
   const res = await fetch(
-    `https://www.zhihu.com/api/v4/questions/${questionId}/answers?order=default&limit=5&offset=0&platform=desktop`,
+    `https://www.zhihu.com/api/v4/questions/${questionId}/answers?include=data%5B*%5D.content%2Cvoteup_count&order=default&limit=5&offset=0&platform=desktop`,
     {
       headers: {
         'User-Agent': USER_AGENT,
         'Referer': `https://www.zhihu.com/question/${questionId}`,
+        ...(cookie ? { 'Cookie': cookie } : {}),
       },
     },
   );
@@ -58,7 +60,7 @@ export async function POST(req: NextRequest) {
     const lines: string[] = [title];
 
     answers.forEach((a, i) => {
-      lines.push(`Comment ${i + 1}. ${a.author} - ${a.score} likes.\n${a.content}`);
+      lines.push(`---------\n${i + 1}. ${a.author} - ${a.score} likes.\n${a.content}`);
     });
 
     const raw = lines.join('\n\n');

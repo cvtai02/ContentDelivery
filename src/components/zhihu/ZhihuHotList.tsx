@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ComposeImagePreview } from '@/components/shared/ComposeImagePreview';
+import { SettingsButton } from '@/components/settings/SettingsButton';
 
 type ZhihuQuestion = {
   id: string;
@@ -10,6 +11,13 @@ type ZhihuQuestion = {
   answerCount: number;
   heat: string;
   url: string;
+};
+
+type PostState = {
+  status: 'generating' | 'ready' | 'error';
+  content: string;
+  imageUrl: string | null;
+  error: string;
 };
 
 function Skeleton({ count }: { count: number }) {
@@ -26,16 +34,24 @@ function Skeleton({ count }: { count: number }) {
   );
 }
 
-function ComposeDialog({ question, onClose }: { question: ZhihuQuestion; onClose: () => void }) {
-  const [content, setContent] = useState('');
-  const [generating, setGenerating] = useState(true);
+function ComposeDialog({
+  question,
+  initialContent,
+  initialImageUrl,
+  onClose,
+}: {
+  question: ZhihuQuestion;
+  initialContent: string;
+  initialImageUrl: string | null;
+  onClose: () => void;
+}) {
+  const [content, setContent] = useState(initialContent);
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState('');
   const [postUrl, setPostUrl] = useState('');
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imageLoading, setImageLoading] = useState(true);
+  const [imageUrl, setImageUrl] = useState<string | null>(initialImageUrl);
+  const [imageLoading, setImageLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
 
   const fetchImage = useCallback((title: string) => {
     setImageLoading(true);
@@ -46,37 +62,6 @@ function ComposeDialog({ question, onClose }: { question: ZhihuQuestion; onClose
       .catch(() => {})
       .finally(() => setImageLoading(false));
   }, []);
-
-  useEffect(() => {
-    fetchImage(question.title);
-  }, [question.title, fetchImage]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setGenerating(true);
-    setError('');
-    setPostUrl('');
-
-    fetch('/api/zhihu/compose', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ questionId: question.id, title: question.title }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data.error) throw new Error(data.error);
-        setContent(data.content ?? '');
-        setGenerating(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Không tạo được bài viết');
-        setGenerating(false);
-      });
-
-    return () => { cancelled = true; };
-  }, [question.id, question.title]);
 
   async function postToFacebook() {
     setPosting(true);
@@ -122,22 +107,14 @@ function ComposeDialog({ question, onClose }: { question: ZhihuQuestion; onClose
             imageLoading={imageLoading}
             onRefresh={() => fetchImage(question.title)}
           />
-
-          {generating ? (
-            <div className="flex flex-col gap-2">
-              <div className="h-4 w-1/3 animate-pulse rounded bg-surface" />
-              <div className="h-32 animate-pulse rounded-xl bg-surface" />
-            </div>
-          ) : (
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              style={{ fieldSizing: 'content' } as any}
-              className="w-full resize-none min-h-[200px] rounded-xl border border-divider bg-surface p-3 text-sm text-primary outline-none focus:border-accent"
-            />
-          )}
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            style={{ fieldSizing: 'content' } as any}
+            className="w-full resize-none min-h-[200px] rounded-xl border border-divider bg-surface p-3 text-sm text-primary outline-none focus:border-accent"
+          />
         </div>
 
         <div className="flex flex-col gap-2 p-6 pt-0">
@@ -156,7 +133,7 @@ function ComposeDialog({ question, onClose }: { question: ZhihuQuestion; onClose
             </button>
             <button
               onClick={postToFacebook}
-              disabled={generating || posting || !content}
+              disabled={posting || !content}
               className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-50 cursor-pointer"
             >
               {posting ? 'Đang đăng...' : 'Đăng Facebook'}
@@ -173,73 +150,138 @@ const SELECT_CLS = 'text-xs text-muted outline-none bg-transparent border-none c
 export function ZhihuHotList() {
   const [questions, setQuestions] = useState<ZhihuQuestion[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [fetchError, setFetchError] = useState('');
   const [limit, setLimit] = useState(10);
-  const [compose, setCompose] = useState<ZhihuQuestion | null>(null);
+  const [postStates, setPostStates] = useState<Record<string, PostState>>({});
+  const [viewing, setViewing] = useState<ZhihuQuestion | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError('');
+    setFetchError('');
 
     fetch(`/api/zhihu/hot?limit=${limit}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
-        if (data.error) { setError(data.error); setLoading(false); return; }
+        if (data.error) { setFetchError(data.error); setLoading(false); return; }
         setQuestions(data.questions ?? []);
         setLoading(false);
       })
-      .catch(() => { if (!cancelled) { setError('Không thể tải dữ liệu Zhihu'); setLoading(false); } });
+      .catch(() => { if (!cancelled) { setFetchError('Không thể tải dữ liệu Zhihu'); setLoading(false); } });
 
     return () => { cancelled = true; };
   }, [limit]);
+
+  async function startGeneration(question: ZhihuQuestion) {
+    const id = question.id;
+    setPostStates((prev) => ({ ...prev, [id]: { status: 'generating', content: '', imageUrl: null, error: '' } }));
+
+    try {
+      const [composeRes, imageRes] = await Promise.all([
+        fetch('/api/zhihu/compose', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questionId: id, title: question.title }),
+        }).then((r) => r.json()),
+        fetch(`/api/image/find?q=${encodeURIComponent(question.title)}`).then((r) => r.json()),
+      ]);
+
+      if (composeRes.error) throw new Error(composeRes.error);
+
+      setPostStates((prev) => ({
+        ...prev,
+        [id]: { status: 'ready', content: composeRes.content ?? '', imageUrl: imageRes.url ?? null, error: '' },
+      }));
+    } catch (err) {
+      setPostStates((prev) => ({
+        ...prev,
+        [id]: { status: 'error', content: '', imageUrl: null, error: err instanceof Error ? err.message : 'Lỗi' },
+      }));
+    }
+  }
+
+  const viewingState = viewing ? postStates[viewing.id] : null;
 
   return (
     <>
       <div className="card h-full">
         <div className="section-label">
           知乎热榜
-          <select
-            value={limit}
-            onChange={(e) => setLimit(Number(e.target.value))}
-            className={`ml-auto ${SELECT_CLS}`}
-          >
-            {[5, 10, 20, 30].map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
+          <div className="ml-auto flex items-center gap-1.5">
+            <select
+              value={limit}
+              onChange={(e) => setLimit(Number(e.target.value))}
+              className={SELECT_CLS}
+            >
+              {[5, 10, 20, 30].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <SettingsButton section="zhihu" label="知乎热榜" />
+          </div>
         </div>
 
-        {loading ? <Skeleton count={limit} /> : error ? (
-          <p className="py-4 text-xs text-fall">{error}</p>
+        {loading ? <Skeleton count={limit} /> : fetchError ? (
+          <p className="py-4 text-xs text-fall">{fetchError}</p>
         ) : (
           <div className="flex flex-col divide-y divide-divider">
-            {questions.map((q, i) => (
-              <div key={q.id} className="py-1.5">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold text-muted w-4 shrink-0">{i + 1}</span>
-                  <span className="text-[10px] text-muted truncate">{q.heat}</span>
-                  <button
-                    onClick={() => setCompose(q)}
-                    className="ml-auto shrink-0 rounded-lg bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent hover:bg-accent/20 transition-colors cursor-pointer"
+            {questions.map((q, i) => {
+              const ps = postStates[q.id];
+              return (
+                <div key={q.id} className="py-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-muted w-4 shrink-0">{i + 1}</span>
+                    <span className="text-[10px] text-muted truncate">{q.heat}</span>
+                    {!ps && (
+                      <button
+                        onClick={() => startGeneration(q)}
+                        className="ml-auto shrink-0 rounded-lg bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent hover:bg-accent/20 transition-colors cursor-pointer"
+                      >
+                        Tạo bài viết
+                      </button>
+                    )}
+                    {ps?.status === 'generating' && (
+                      <span className="ml-auto shrink-0 text-[11px] text-muted">Đang tạo...</span>
+                    )}
+                    {ps?.status === 'ready' && (
+                      <button
+                        onClick={() => setViewing(q)}
+                        className="ml-auto shrink-0 rounded-lg bg-accent px-2 py-0.5 text-[11px] font-semibold text-black hover:opacity-90 transition-opacity cursor-pointer"
+                      >
+                        Xem bài viết
+                      </button>
+                    )}
+                    {ps?.status === 'error' && (
+                      <button
+                        onClick={() => startGeneration(q)}
+                        className="ml-auto shrink-0 rounded-lg bg-fall/10 px-2 py-0.5 text-[11px] font-semibold text-fall hover:bg-fall/20 transition-colors cursor-pointer"
+                      >
+                        Thử lại
+                      </button>
+                    )}
+                  </div>
+                  <a
+                    href={q.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="truncate text-sm font-semibold text-primary hover:underline block"
                   >
-                    Tạo bài viết
-                  </button>
+                    {q.title}
+                  </a>
                 </div>
-                <a
-                  href={q.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="truncate text-sm font-semibold text-primary hover:underline block"
-                >
-                  {q.title}
-                </a>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
-      {compose && <ComposeDialog question={compose} onClose={() => setCompose(null)} />}
+      {viewing && viewingState?.status === 'ready' && (
+        <ComposeDialog
+          question={viewing}
+          initialContent={viewingState.content}
+          initialImageUrl={viewingState.imageUrl}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </>
   );
 }

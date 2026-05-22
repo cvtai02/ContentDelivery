@@ -1,5 +1,4 @@
 import WeatherCard    from '@/components/weather/WeatherCard';
-import TodayPostCard  from '@/components/today-post/TodayPostCard';
 import { RedditHotList } from '@/components/reddit/RedditHotList';
 import { WeiboHotList }  from '@/components/weibo/WeiboHotList';
 import { ZhihuHotList }     from '@/components/zhihu/ZhihuHotList';
@@ -13,7 +12,6 @@ export default function Home() {
         {/* Col 1 */}
         <div className="col-span-3 lg:col-span-1 flex flex-col">
           <div className="border-2 border-divider"><WeatherCard /></div>
-          <div className="border-2 border-divider"><TodayPostCard /></div>
           <div className="border-2 border-divider"><GetGoHotList /></div>
           <div className="border-2 border-divider"><WorkplaceHotList /></div>
         </div>

@@ -36,15 +36,22 @@ function Field({ label, value, onChange, placeholder, type = 'text', hint }: {
 
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [config, setConfig] = useState<Config | null>(null);
+  const [fetching, setFetching] = useState(true);
+
+  // Credentials section
   const [appId, setAppId] = useState('');
   const [appSecret, setAppSecret] = useState('');
+  const [credLoading, setCredLoading] = useState(false);
+  const [credMessage, setCredMessage] = useState('');
+  const [credError, setCredError] = useState('');
+
+  // Token exchange section
   const [userToken, setUserToken] = useState('');
   const [pageId, setPageId] = useState('');
   const [availablePages, setAvailablePages] = useState<AvailablePage[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(true);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [tokenMessage, setTokenMessage] = useState('');
+  const [tokenError, setTokenError] = useState('');
 
   useEffect(() => {
     fetch('/api/settings')
@@ -57,42 +64,54 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       .catch(() => setFetching(false));
   }, []);
 
-  async function submit(e: React.FormEvent) {
+  async function saveCreds(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
-    setError('');
-    setMessage('');
-    setAvailablePages([]);
-
+    setCredLoading(true);
+    setCredError('');
+    setCredMessage('');
     try {
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          appId: appId || undefined,
-          appSecret: appSecret || undefined,
-          userToken: userToken || undefined,
-          pageId: pageId || undefined,
-        }),
+        body: JSON.stringify({ appId: appId || undefined, appSecret: appSecret || undefined }),
       });
-      const data = await res.json() as Config & { added?: string; availablePages?: AvailablePage[] };
-      if (!res.ok) throw new Error((data as unknown as { error: string }).error);
-
+      const data = await res.json() as Config & { error?: string };
+      if (!res.ok) throw new Error(data.error);
       setConfig({ appId: data.appId, appSecret: data.appSecret, targets: data.targets });
       setAppSecret('');
-      setUserToken('');
+      setCredMessage('Đã lưu.');
+    } catch (err) {
+      setCredError(err instanceof Error ? err.message : 'Lỗi không xác định');
+    } finally {
+      setCredLoading(false);
+    }
+  }
 
+  async function getPermanentToken(e: React.FormEvent) {
+    e.preventDefault();
+    setTokenLoading(true);
+    setTokenError('');
+    setTokenMessage('');
+    setAvailablePages([]);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userToken: userToken || undefined, pageId: pageId || undefined }),
+      });
+      const data = await res.json() as Config & { added?: string; availablePages?: AvailablePage[]; error?: string };
+      if (!res.ok) throw new Error(data.error);
+      setConfig({ appId: data.appId, appSecret: data.appSecret, targets: data.targets });
+      setUserToken('');
+      setPageId('');
       if (data.availablePages && data.availablePages.length > 1) {
         setAvailablePages(data.availablePages);
       }
-
-      setMessage(data.added
-        ? `Đã thêm "${data.added}" vào danh sách. Restart Next.js để áp dụng.`
-        : 'Đã lưu cài đặt.');
+      setTokenMessage(data.added ? `Đã thêm "${data.added}". Restart Next.js để áp dụng.` : 'Đã lưu.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Lỗi không xác định');
+      setTokenError(err instanceof Error ? err.message : 'Lỗi không xác định');
     } finally {
-      setLoading(false);
+      setTokenLoading(false);
     }
   }
 
@@ -130,10 +149,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 
         <hr className="border-divider" />
 
-        {/* Credential form */}
-        <form onSubmit={submit} className="flex flex-col gap-3">
-          <p className="text-xs font-semibold text-muted uppercase tracking-wide">Cài đặt</p>
-
+        {/* Credentials */}
+        <form onSubmit={saveCreds} className="flex flex-col gap-3">
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide">App Credentials</p>
           <Field
             label="App ID"
             value={appId}
@@ -148,12 +166,30 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             placeholder="Để trống nếu không đổi"
             type="password"
           />
+          {credError && <p className="text-xs text-fall">{credError}</p>}
+          {credMessage && <p className="text-xs text-accent">{credMessage}</p>}
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              disabled={credLoading}
+              className="rounded-lg bg-surface border border-divider px-4 py-1.5 text-xs font-semibold text-primary hover:border-accent transition-colors disabled:opacity-50 disabled:cursor-wait cursor-pointer"
+            >
+              {credLoading ? 'Đang lưu…' : 'Lưu'}
+            </button>
+          </div>
+        </form>
+
+        <hr className="border-divider" />
+
+        {/* Token exchange */}
+        <form onSubmit={getPermanentToken} className="flex flex-col gap-3">
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide">Thêm Page Target</p>
           <Field
             label="User Access Token"
             value={userToken}
             onChange={setUserToken}
             placeholder="EAAZAh… (lấy từ Graph API Explorer)"
-            hint="Cần quyền pages_manage_posts — để trống nếu chỉ lưu App ID/Secret"
+            hint="Cần quyền pages_manage_posts"
           />
           <Field
             label="Page ID (tuỳ chọn)"
@@ -162,7 +198,6 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             placeholder="Mặc định lấy page đầu tiên"
           />
 
-          {/* Available pages hint */}
           {availablePages.length > 0 && (
             <div className="rounded-xl bg-surface p-3 flex flex-col gap-1">
               <p className="text-xs font-semibold text-muted">Các page trong tài khoản:</p>
@@ -179,8 +214,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {error && <p className="text-xs text-fall">{error}</p>}
-          {message && <p className="text-xs text-accent">{message}</p>}
+          {tokenError && <p className="text-xs text-fall">{tokenError}</p>}
+          {tokenMessage && <p className="text-xs text-accent">{tokenMessage}</p>}
 
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" onClick={onClose} className="rounded-lg border border-divider px-3 py-1.5 text-xs font-semibold text-muted hover:text-primary cursor-pointer bg-transparent">
@@ -188,10 +223,10 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={tokenLoading || !userToken}
               className="rounded-lg bg-accent px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-wait cursor-pointer"
             >
-              {loading ? 'Đang lưu…' : 'Lưu'}
+              {tokenLoading ? 'Đang lấy token…' : 'Get permanent token & save'}
             </button>
           </div>
         </form>
