@@ -3,7 +3,7 @@ import { getPromptTemplate, setPromptTemplate, deletePromptTemplate } from '@/li
 export type PromptKey = 'reddit' | 'workplace' | 'zhihu' | 'audio';
 
 export const DEFAULT_PROMPTS: Record<PromptKey, string> = {
-  reddit: `Translate the following Reddit post and comments to Vietnamese. Keep the exact format and structure. Only translate the text content — do not add, remove, or rewrite anything. Do NOT translate or modify header lines (e.g. "1. AuthorName - 123 likes. [ts:1234567890]" must stay exactly as-is). Do NOT remove or change any [ts:...] markers.\n\n{{content}}`,
+  reddit: `Translate all string values in the following JSON to Vietnamese. Return ONLY valid JSON — exact same structure and keys, only the string values translated. Do not add markdown, do not wrap in code blocks.\n\n{{content}}`,
 
   workplace: `Translate the following Workplace Stack Exchange question and answers to Vietnamese. Keep the exact format and structure. Only translate the text content — do not add, remove, or rewrite anything. Do NOT translate or modify header lines (e.g. "1. AuthorName - 123 likes. [ts:1234567890]" must stay exactly as-is). Do NOT remove or change any [ts:...] markers.\n\n{{content}}`,
 

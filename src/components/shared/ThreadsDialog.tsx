@@ -2,10 +2,10 @@
 
 import { useCallback } from 'react';
 import { ThreadsPreview } from '@/components/shared/ThreadsPreview';
-import type { ThreadsBlock } from '@/lib/parseThreadsPost';
+import type { PostBlock } from '@/lib/parseThreadsPost';
 
 type Props = {
-  blocks: ThreadsBlock[];
+  blocks: PostBlock[];
   title: string;
   onClose: () => void;
 };
@@ -20,7 +20,7 @@ export function ThreadsDialog({ blocks, title, onClose }: Props) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       onClick={handleBackdrop}
     >
-      <div className="flex w-full max-w-2xl flex-col rounded-2xl bg-panel shadow-2xl max-h-[90vh]">
+      <div className="flex w-auto flex-col rounded-2xl bg-panel shadow-2xl max-h-[90vh]">
         <div className="flex items-center gap-3 p-6 pb-0">
           <p className="flex-1 line-clamp-2 text-sm font-semibold text-primary min-w-0">{title}</p>
           <button

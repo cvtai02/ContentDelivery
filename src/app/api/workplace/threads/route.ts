@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSEQuestionAndAnswers } from '@/lib/stackexchange';
 import { getDiceBearAvatar } from '@/lib/avatar';
-import type { ThreadsBlock } from '@/lib/parseThreadsPost';
+import type { PostBlock } from '@/lib/parseThreadsPost';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     const avatarMap = new Map<string, string>();
     await Promise.all(uniqueAuthors.map(async (a) => { avatarMap.set(a, await getDiceBearAvatar(a)); }));
 
-    const blocks: ThreadsBlock[] = [
+    const blocks: PostBlock[] = [
       { text: body ? `${title}\n\n${body}` : title, author: questionAuthor || 'The Workplace', avatarUrl: avatarMap.get(questionAuthor || 'The Workplace'), score: questionScore ?? 0, isMain: true, createdAt: questionCreatedAt },
       ...answers.map((a) => ({
         text: a.body,

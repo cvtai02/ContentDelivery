@@ -81,6 +81,10 @@ export type RedditComment = { author: string; body: string; score: number; creat
 export type RedditReply = RedditComment & { parentIdx: number };
 
 export async function getRedditPostAndComments(subreddit: string, postId: string) {
+  return withCache(`reddit_post_${postId}`, 30 * 60 * 1000, () => _fetchRedditPostAndComments(subreddit, postId));
+}
+
+async function _fetchRedditPostAndComments(subreddit: string, postId: string) {
   const res = await fetch(
     `https://www.reddit.com/r/${subreddit}/comments/${postId}.json?limit=10&sort=top`,
     { headers: { 'User-Agent': REDDIT_UA } },

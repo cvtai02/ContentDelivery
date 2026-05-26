@@ -1,15 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ComposeDialog } from '@/components/shared/ComposeDialog';
-import { ThreadsButton } from '@/components/shared/ThreadsButton';
-import { PostStateButtons } from '@/components/shared/PostStateButtons';
+import { PostDialog } from '@/components/shared/PostDialog';
+import { OriginThreadsButton } from '@/components/shared/OriginThreadsButton';
+import { VietnameseButton } from '@/components/shared/VietnameseButton';
 import { Skeleton } from '@/components/shared/Skeleton';
 import { SettingsButton } from '@/components/settings/SettingsButton';
-import { useThreads } from '@/hooks/useThreads';
 import { formatCount, timeAgo } from '@/lib/utils';
-import type { PostState } from '@/types/post';
-import type { ThreadsEntry } from '@/hooks/useThreads';
+import type { PostBlock } from '@/lib/parseThreadsPost';
 
 type RedditPost = {
   id: string;
@@ -23,6 +21,7 @@ type RedditPost = {
   subreddit?: string;
 };
 
+type PostEntry = { status: 'loading' | 'ready' | 'error'; blocks?: PostBlock[] };
 
 const SUBREDDITS = ['antiwork', 'AskReddit', 'confession', 'AmItheAsshole', 'tifu', 'relationship_advice', 'personalfinance', 'legaladvice', 'raisedbynarcissists', 'JUSTNOMIL'];
 
@@ -32,21 +31,23 @@ const SELECT_N_CLS = 'min-w-[2rem] text-center text-xs normal-case text-muted ou
 function SubredditSection({
   subreddit,
   refreshTick,
-  postStates,
-  threadsStates,
-  onStartGeneration,
-  onView,
-  onStartThreads,
-  onViewThreads,
+  originStates,
+  viStates,
+  onStartOrigin,
+  onViewOrigin,
+  onStartVietnamese,
+  onViewVietnamese,
+  onRefreshVietnamese,
 }: {
   subreddit: string;
   refreshTick: number;
-  postStates: Record<string, PostState>;
-  threadsStates: Record<string, ThreadsEntry>;
-  onStartGeneration: (post: RedditPost) => void;
-  onView: (post: RedditPost) => void;
-  onStartThreads: (post: RedditPost) => void;
-  onViewThreads: (post: RedditPost) => void;
+  originStates: Record<string, PostEntry>;
+  viStates: Record<string, PostEntry>;
+  onStartOrigin: (post: RedditPost) => void;
+  onViewOrigin: (post: RedditPost) => void;
+  onStartVietnamese: (post: RedditPost) => void;
+  onViewVietnamese: (post: RedditPost) => void;
+  onRefreshVietnamese: (post: RedditPost) => void;
 }) {
   const [t, setT] = useState('day');
   const [limit, setLimit] = useState(1);
@@ -91,15 +92,16 @@ function SubredditSection({
                   {post.createdUtc ? ` · ${timeAgo(post.createdUtc)} ago` : ''}
                 </span>
                 <div className="ml-auto flex items-center gap-1 shrink-0">
-                  <ThreadsButton
-                    status={threadsStates[post.id]?.status ?? 'none'}
-                    onGenerate={() => onStartThreads(post)}
-                    onView={() => onViewThreads(post)}
+                  <VietnameseButton
+                    status={viStates[post.id]?.status ?? 'none'}
+                    onGenerate={() => onStartVietnamese(post)}
+                    onView={() => onViewVietnamese(post)}
+                    onRefresh={() => onRefreshVietnamese(post)}
                   />
-                  <PostStateButtons
-                    state={postStates[post.id]?.status ?? 'none'}
-                    onGenerate={() => onStartGeneration(post)}
-                    onView={() => onView(post)}
+                  <OriginThreadsButton
+                    status={originStates[post.id]?.status ?? 'none'}
+                    onGenerate={() => onStartOrigin(post)}
+                    onView={() => onViewOrigin(post)}
                   />
                 </div>
               </div>
@@ -116,36 +118,49 @@ function SubredditSection({
 
 export function RedditHotList() {
   const [refreshTick, setRefreshTick] = useState(0);
-  const [postStates, setPostStates] = useState<Record<string, PostState>>({});
-  const [viewing, setViewing] = useState<RedditPost | null>(null);
-  const { threadsStates, startThreads: triggerThreads, setViewingThreads, dialog } = useThreads();
+  const [originStates, setOriginStates] = useState<Record<string, PostEntry>>({});
+  const [viewingOrigin, setViewingOrigin] = useState<RedditPost | null>(null);
+  const [viStates, setViStates] = useState<Record<string, PostEntry>>({});
+  const [viewingVi, setViewingVi] = useState<RedditPost | null>(null);
 
   useEffect(() => {
     const interval = setInterval(() => setRefreshTick((v) => v + 1), 5 * 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
-  const startGeneration = useCallback(async (post: RedditPost) => {
+  const fetchOrigin = useCallback(async (post: RedditPost) => {
     const id = post.id;
-    const subreddit = post.subreddit ?? 'AskReddit';
-    setPostStates((prev) => ({ ...prev, [id]: { status: 'generating', content: '', imageUrl: null, error: '' } }));
+    setOriginStates((prev) => ({ ...prev, [id]: { status: 'loading' } }));
     try {
-      const [composeRes, imageRes] = await Promise.all([
-        fetch('/api/reddit/compose', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: id, subreddit, title: post.title }) }).then((r) => r.json()),
-        fetch(`/api/image/find?q=${encodeURIComponent(post.title)}`).then((r) => r.json()),
-      ]);
-      if (composeRes.error) throw new Error(composeRes.error);
-      setPostStates((prev) => ({ ...prev, [id]: { status: 'ready', content: composeRes.content ?? '', imageUrl: imageRes.url ?? null, error: '' } }));
-    } catch (err) {
-      setPostStates((prev) => ({ ...prev, [id]: { status: 'error', content: '', imageUrl: null, error: err instanceof Error ? err.message : 'Lỗi' } }));
+      const res = await fetch('/api/reddit/origin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId: id, subreddit: post.subreddit ?? 'AskReddit', title: post.title }),
+      }).then((r) => r.json());
+      if (res.error) throw new Error(res.error);
+      setOriginStates((prev) => ({ ...prev, [id]: { status: 'ready', blocks: res.blocks } }));
+      setViewingOrigin(post);
+    } catch {
+      setOriginStates((prev) => ({ ...prev, [id]: { status: 'error' } }));
     }
   }, []);
 
-  const startThreads = useCallback((post: RedditPost) => {
-    triggerThreads(post.id, post.title, '/api/reddit/threads', { postId: post.id, subreddit: post.subreddit ?? 'AskReddit', title: post.title });
-  }, [triggerThreads]);
-
-  const viewingState = viewing ? postStates[viewing.id] : null;
+  const fetchVietnamese = useCallback(async (post: RedditPost, refresh = false) => {
+    const id = post.id;
+    setViStates((prev) => ({ ...prev, [id]: { status: 'loading' } }));
+    try {
+      const res = await fetch('/api/reddit/vietnamese', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId: id, subreddit: post.subreddit ?? 'AskReddit', title: post.title, refresh }),
+      }).then((r) => r.json());
+      if (res.error) throw new Error(res.error);
+      setViStates((prev) => ({ ...prev, [id]: { status: 'ready', blocks: res.blocks } }));
+      setViewingVi(post);
+    } catch {
+      setViStates((prev) => ({ ...prev, [id]: { status: 'error' } }));
+    }
+  }, []);
 
   return (
     <>
@@ -159,30 +174,34 @@ export function RedditHotList() {
             key={sub}
             subreddit={sub}
             refreshTick={refreshTick}
-            postStates={postStates}
-            threadsStates={threadsStates}
-            onStartGeneration={startGeneration}
-            onView={setViewing}
-            onStartThreads={startThreads}
-            onViewThreads={(post) => setViewingThreads({ id: post.id, title: post.title })}
+            originStates={originStates}
+            viStates={viStates}
+            onStartOrigin={fetchOrigin}
+            onViewOrigin={setViewingOrigin}
+            onStartVietnamese={(post) => fetchVietnamese(post)}
+            onViewVietnamese={setViewingVi}
+            onRefreshVietnamese={(post) => fetchVietnamese(post, true)}
           />
         ))}
       </div>
 
-      {viewing && viewingState?.status === 'ready' && (
-        <ComposeDialog
-          sourceLabel={`r/${viewing.subreddit ?? 'reddit'}`}
-          title={viewing.title}
-          facebookEndpoint="/api/reddit/facebook"
-          initialContent={viewingState.content}
-          initialImageUrl={viewingState.imageUrl}
-          mainAuthor={`u/${viewing.author}`}
-          mainCreatedAt={viewing.createdUtc}
-          onClose={() => setViewing(null)}
+      {viewingOrigin && originStates[viewingOrigin.id]?.blocks && (
+        <PostDialog
+          blocks={originStates[viewingOrigin.id].blocks!}
+          title={viewingOrigin.title}
+          sourceLabel={`r/${viewingOrigin.subreddit ?? 'reddit'} · origin`}
+          onClose={() => setViewingOrigin(null)}
         />
       )}
 
-      {dialog}
+      {viewingVi && viStates[viewingVi.id]?.blocks && (
+        <PostDialog
+          blocks={viStates[viewingVi.id].blocks!}
+          title={viewingVi.title}
+          sourceLabel={`r/${viewingVi.subreddit ?? 'reddit'} · vietnamese`}
+          onClose={() => setViewingVi(null)}
+        />
+      )}
     </>
   );
 }

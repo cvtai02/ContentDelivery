@@ -2,8 +2,7 @@
 
 import { useState } from 'react';
 import { ThreadsDialog } from '@/components/shared/ThreadsDialog';
-import { ThreadsIcon } from '@/components/shared/ThreadsIcon';
-import type { ThreadsBlock } from '@/lib/parseThreadsPost';
+import type { PostBlock } from '@/lib/parseThreadsPost';
 
 async function fetchDiceBearDataUrl(seed: string): Promise<string> {
   const url = `https://api.dicebear.com/9.x/adventurer/svg?seed=${encodeURIComponent(seed)}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`;
@@ -18,7 +17,7 @@ async function fetchDiceBearDataUrl(seed: string): Promise<string> {
   }
 }
 
-async function enrichWithAvatars(blocks: ThreadsBlock[]): Promise<ThreadsBlock[]> {
+async function enrichWithAvatars(blocks: PostBlock[]): Promise<PostBlock[]> {
   const authors = [...new Set(blocks.filter(b => b.author && !b.avatarUrl).map(b => b.author!))];
   if (authors.length === 0) return blocks;
   const avatarMap = new Map<string, string>();
@@ -27,14 +26,14 @@ async function enrichWithAvatars(blocks: ThreadsBlock[]): Promise<ThreadsBlock[]
 }
 
 type Props = {
-  blocks: ThreadsBlock[];
+  blocks: PostBlock[];
   title: string;
   disabled?: boolean;
 };
 
 export function ThreadsViewButton({ blocks, title, disabled }: Props) {
   const [open, setOpen] = useState(false);
-  const [enrichedBlocks, setEnrichedBlocks] = useState<ThreadsBlock[]>([]);
+  const [enrichedBlocks, setEnrichedBlocks] = useState<PostBlock[]>([]);
 
   async function handleOpen() {
     setEnrichedBlocks(await enrichWithAvatars(blocks));
@@ -46,9 +45,9 @@ export function ThreadsViewButton({ blocks, title, disabled }: Props) {
       <button
         onClick={handleOpen}
         disabled={disabled || blocks.length === 0}
-        className="rounded-lg bg-surface border border-divider px-3 py-1.5 text-muted hover:text-primary disabled:opacity-40 cursor-pointer transition-colors"
+        className="bg-transparent border-0 p-0.5 text-[11px] font-semibold text-muted hover:text-primary disabled:opacity-40 cursor-pointer transition-colors"
       >
-        <ThreadsIcon size={13} />
+        origin
       </button>
       {open && (
         <ThreadsDialog blocks={enrichedBlocks} title={title} onClose={() => setOpen(false)} />

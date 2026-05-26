@@ -2,9 +2,9 @@
 
 import { useCallback, useState } from 'react';
 import { ThreadsDialog } from '@/components/shared/ThreadsDialog';
-import type { ThreadsBlock } from '@/lib/parseThreadsPost';
+import type { PostBlock } from '@/lib/parseThreadsPost';
 
-export type ThreadsEntry = { status: 'loading' | 'ready' | 'error'; blocks?: ThreadsBlock[] };
+export type ThreadsEntry = { status: 'loading' | 'ready' | 'error'; blocks?: PostBlock[] };
 
 export function useThreads() {
   const [threadsStates, setThreadsStates] = useState<Record<string, ThreadsEntry>>({});

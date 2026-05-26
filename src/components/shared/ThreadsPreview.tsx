@@ -2,11 +2,11 @@
 
 import type React from 'react';
 import { ThreadsCard } from '@/components/shared/ThreadsCard';
-import type { ThreadsBlock } from '@/lib/parseThreadsPost';
+import type { PostBlock } from '@/lib/parseThreadsPost';
 
-type BlockGroup = { block: ThreadsBlock; replies: ThreadsBlock[]; globalIdx: number };
+type BlockGroup = { block: PostBlock; replies: PostBlock[]; globalIdx: number };
 
-function groupBlocks(blocks: ThreadsBlock[]): BlockGroup[] {
+function groupBlocks(blocks: PostBlock[]): BlockGroup[] {
   const groups: BlockGroup[] = [];
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
@@ -19,7 +19,7 @@ function groupBlocks(blocks: ThreadsBlock[]): BlockGroup[] {
   return groups;
 }
 
-type Props = { blocks: ThreadsBlock[]; groupRefs?: React.MutableRefObject<(HTMLDivElement | null)[]> };
+type Props = { blocks: PostBlock[]; groupRefs?: React.MutableRefObject<(HTMLDivElement | null)[]> };
 
 export function ThreadsPreview({ blocks, groupRefs }: Props) {
   const groups = groupBlocks(blocks);

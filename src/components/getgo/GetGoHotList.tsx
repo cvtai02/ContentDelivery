@@ -1,15 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ComposeDialog } from '@/components/shared/ComposeDialog';
-import { ThreadsButton } from '@/components/shared/ThreadsButton';
-import { PostStateButtons } from '@/components/shared/PostStateButtons';
+import { useCallback, useEffect, useState } from 'react';
+import { PostDialog } from '@/components/shared/PostDialog';
+import { OriginThreadsButton } from '@/components/shared/OriginThreadsButton';
 import { Skeleton } from '@/components/shared/Skeleton';
 import { SettingsButton } from '@/components/settings/SettingsButton';
-import { useThreads } from '@/hooks/useThreads';
-import type { ThreadsEntry } from '@/hooks/useThreads';
 import { formatCount, timeAgo } from '@/lib/utils';
-import type { PostState } from '@/types/post';
+import type { PostBlock } from '@/lib/parseThreadsPost';
 
 type RedditPost = {
   id: string;
@@ -29,20 +26,19 @@ type ZhihuQuestion = {
   url: string;
 };
 
-type ComposeTarget =
-  | { kind: 'reddit'; post: RedditPost }
-  | { kind: 'zhihu'; question: ZhihuQuestion };
-
+type PostEntry = { status: 'loading' | 'ready' | 'error'; blocks?: PostBlock[] };
+type ViewingTarget = { id: string; title: string; label: string };
 
 const SELECT_CLS = 'text-xs text-muted outline-none bg-transparent border-none cursor-pointer appearance-none underline underline-offset-2';
 
-function RedditTravelSection({ postStates, threadsStates, onStartGeneration, onView, onStartThreads, onViewThreads }: {
-  postStates: Record<string, PostState>;
-  threadsStates: Record<string, ThreadsEntry>;
-  onStartGeneration: (post: RedditPost) => void;
-  onView: (post: RedditPost) => void;
-  onStartThreads: (post: RedditPost) => void;
-  onViewThreads: (post: RedditPost) => void;
+function RedditTravelSection({
+  originStates,
+  onFetchOrigin,
+  onViewOrigin,
+}: {
+  originStates: Record<string, PostEntry>;
+  onFetchOrigin: (post: RedditPost) => void;
+  onViewOrigin: (post: RedditPost) => void;
 }) {
   const [posts, setPosts] = useState<RedditPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,15 +85,10 @@ function RedditTravelSection({ postStates, threadsStates, onStartGeneration, onV
                   {post.createdUtc ? ` · ${timeAgo(post.createdUtc)} ago` : ''}
                 </span>
                 <div className="ml-auto flex items-center gap-1 shrink-0">
-                  <ThreadsButton
-                    status={threadsStates[post.id]?.status ?? 'none'}
-                    onGenerate={() => onStartThreads(post)}
-                    onView={() => onViewThreads(post)}
-                  />
-                  <PostStateButtons
-                    state={postStates[post.id]?.status ?? 'none'}
-                    onGenerate={() => onStartGeneration(post)}
-                    onView={() => onView(post)}
+                  <OriginThreadsButton
+                    status={originStates[post.id]?.status ?? 'none'}
+                    onGenerate={() => onFetchOrigin(post)}
+                    onView={() => onViewOrigin(post)}
                   />
                 </div>
               </div>
@@ -112,13 +103,14 @@ function RedditTravelSection({ postStates, threadsStates, onStartGeneration, onV
   );
 }
 
-function ZhihuTravelSection({ postStates, threadsStates, onStartGeneration, onView, onStartThreads, onViewThreads }: {
-  postStates: Record<string, PostState>;
-  threadsStates: Record<string, ThreadsEntry>;
-  onStartGeneration: (q: ZhihuQuestion) => void;
-  onView: (q: ZhihuQuestion) => void;
-  onStartThreads: (q: ZhihuQuestion) => void;
-  onViewThreads: (q: ZhihuQuestion) => void;
+function ZhihuTravelSection({
+  originStates,
+  onFetchOrigin,
+  onViewOrigin,
+}: {
+  originStates: Record<string, PostEntry>;
+  onFetchOrigin: (q: ZhihuQuestion) => void;
+  onViewOrigin: (q: ZhihuQuestion) => void;
 }) {
   const [questions, setQuestions] = useState<ZhihuQuestion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -151,15 +143,10 @@ function ZhihuTravelSection({ postStates, threadsStates, onStartGeneration, onVi
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] text-muted truncate">{q.heat}</span>
                 <div className="ml-auto flex items-center gap-1 shrink-0">
-                  <ThreadsButton
-                    status={threadsStates[q.id]?.status ?? 'none'}
-                    onGenerate={() => onStartThreads(q)}
-                    onView={() => onViewThreads(q)}
-                  />
-                  <PostStateButtons
-                    state={postStates[q.id]?.status ?? 'none'}
-                    onGenerate={() => onStartGeneration(q)}
-                    onView={() => onView(q)}
+                  <OriginThreadsButton
+                    status={originStates[q.id]?.status ?? 'none'}
+                    onGenerate={() => onFetchOrigin(q)}
+                    onView={() => onViewOrigin(q)}
                   />
                 </div>
               </div>
@@ -175,35 +162,42 @@ function ZhihuTravelSection({ postStates, threadsStates, onStartGeneration, onVi
 }
 
 export function GetGoHotList() {
-  const [postStates, setPostStates] = useState<Record<string, PostState>>({});
-  const [viewing, setViewing] = useState<ComposeTarget | null>(null);
-  const { threadsStates, startThreads: triggerThreads, setViewingThreads, dialog } = useThreads();
+  const [originStates, setOriginStates] = useState<Record<string, PostEntry>>({});
+  const [viewing, setViewing] = useState<ViewingTarget | null>(null);
 
-  async function startGeneration(target: ComposeTarget) {
-    const id = target.kind === 'reddit' ? target.post.id : target.question.id;
-    const title = target.kind === 'reddit' ? target.post.title : target.question.title;
-    const [url, body] = target.kind === 'reddit'
-      ? ['/api/reddit/compose', { postId: id, subreddit: 'travel', title }]
-      : ['/api/zhihu/compose', { questionId: id, title }];
-
-    setPostStates((prev) => ({ ...prev, [id]: { status: 'generating', content: '', imageUrl: null, error: '' } }));
+  const fetchRedditOrigin = useCallback(async (post: RedditPost) => {
+    const id = post.id;
+    setOriginStates((prev) => ({ ...prev, [id]: { status: 'loading' } }));
     try {
-      const [composeRes, imageRes] = await Promise.all([
-        fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json()),
-        fetch(`/api/image/find?q=${encodeURIComponent('travel ' + title)}`).then((r) => r.json()),
-      ]);
-      if (composeRes.error) throw new Error(composeRes.error);
-      setPostStates((prev) => ({ ...prev, [id]: { status: 'ready', content: composeRes.content ?? '', imageUrl: imageRes.url ?? null, error: '' } }));
-    } catch (err) {
-      setPostStates((prev) => ({ ...prev, [id]: { status: 'error', content: '', imageUrl: null, error: err instanceof Error ? err.message : 'Lỗi' } }));
+      const res = await fetch('/api/reddit/origin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId: id, subreddit: 'travel', title: post.title }),
+      }).then((r) => r.json());
+      if (res.error) throw new Error(res.error);
+      setOriginStates((prev) => ({ ...prev, [id]: { status: 'ready', blocks: res.blocks } }));
+      setViewing({ id, title: post.title, label: 'r/travel' });
+    } catch {
+      setOriginStates((prev) => ({ ...prev, [id]: { status: 'error' } }));
     }
-  }
+  }, []);
 
-
-  const viewingId = viewing ? (viewing.kind === 'reddit' ? viewing.post.id : viewing.question.id) : null;
-  const viewingState = viewingId ? postStates[viewingId] : null;
-  const viewingTitle = viewing ? (viewing.kind === 'reddit' ? viewing.post.title : viewing.question.title) : '';
-  const viewingLabel = viewing ? (viewing.kind === 'reddit' ? 'r/travel' : '知乎 · 旅行') : '';
+  const fetchZhihuOrigin = useCallback(async (q: ZhihuQuestion) => {
+    const id = q.id;
+    setOriginStates((prev) => ({ ...prev, [id]: { status: 'loading' } }));
+    try {
+      const res = await fetch('/api/zhihu/threads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionId: id, title: q.title }),
+      }).then((r) => r.json());
+      if (res.error) throw new Error(res.error);
+      setOriginStates((prev) => ({ ...prev, [id]: { status: 'ready', blocks: res.blocks } }));
+      setViewing({ id, title: q.title, label: '知乎 · 旅行' });
+    } catch {
+      setOriginStates((prev) => ({ ...prev, [id]: { status: 'error' } }));
+    }
+  }, []);
 
   return (
     <>
@@ -213,38 +207,25 @@ export function GetGoHotList() {
           <SettingsButton section="getgo" label="Gét gô" />
         </div>
         <RedditTravelSection
-          postStates={postStates}
-          threadsStates={threadsStates}
-          onStartGeneration={(post) => startGeneration({ kind: 'reddit', post })}
-          onView={(post) => setViewing({ kind: 'reddit', post })}
-          onStartThreads={(post) => triggerThreads(post.id, post.title, '/api/reddit/threads', { postId: post.id, subreddit: 'travel', title: post.title })}
-          onViewThreads={(post) => setViewingThreads({ id: post.id, title: post.title })}
+          originStates={originStates}
+          onFetchOrigin={fetchRedditOrigin}
+          onViewOrigin={(post) => setViewing({ id: post.id, title: post.title, label: 'r/travel' })}
         />
         <ZhihuTravelSection
-          postStates={postStates}
-          threadsStates={threadsStates}
-          onStartGeneration={(q) => startGeneration({ kind: 'zhihu', question: q })}
-          onView={(q) => setViewing({ kind: 'zhihu', question: q })}
-          onStartThreads={(q) => triggerThreads(q.id, q.title, '/api/zhihu/threads', { questionId: q.id, title: q.title })}
-          onViewThreads={(q) => setViewingThreads({ id: q.id, title: q.title })}
+          originStates={originStates}
+          onFetchOrigin={fetchZhihuOrigin}
+          onViewOrigin={(q) => setViewing({ id: q.id, title: q.title, label: '知乎 · 旅行' })}
         />
       </div>
 
-      {viewing && viewingState?.status === 'ready' && (
-        <ComposeDialog
-          sourceLabel={viewingLabel}
-          title={viewingTitle}
-          facebookEndpoint="/api/getgo/facebook"
-          imageSearchQuery={`travel ${viewingTitle}`}
-          initialContent={viewingState.content}
-          initialImageUrl={viewingState.imageUrl}
-          mainAuthor={viewing.kind === 'reddit' ? `u/${viewing.post.author}` : undefined}
-          mainCreatedAt={viewing.kind === 'reddit' ? viewing.post.createdUtc : undefined}
+      {viewing && originStates[viewing.id]?.blocks && (
+        <PostDialog
+          blocks={originStates[viewing.id].blocks!}
+          title={viewing.title}
+          sourceLabel={viewing.label}
           onClose={() => setViewing(null)}
         />
       )}
-
-      {dialog}
     </>
   );
 }

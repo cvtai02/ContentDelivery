@@ -1,4 +1,4 @@
-export type ThreadsBlock = {
+export type PostBlock = {
   text: string;
   isMain: boolean;
   isReply?: boolean;
@@ -8,7 +8,7 @@ export type ThreadsBlock = {
   createdAt?: number;
 };
 
-export function parseThreadsPost(content: string): ThreadsBlock[] {
+export function parseThreadsPost(content: string): PostBlock[] {
   const SEPARATOR = /\n-{9}\n/;
   const parts = content.split(SEPARATOR).map((s) => s.trim()).filter(Boolean);
   return parts.map((text, i) => ({ text, isMain: i === 0 }));
@@ -18,9 +18,9 @@ const LIKES_PAT = /(?:likes?|lượt thích)/.source;
 const HEADER_RE = new RegExp(`^\\d+\\.\\s+(.+?)\\s+-\\s+(\\d+)\\s+${LIKES_PAT}\\.(?:\\s+\\[ts:(\\d+)\\])?`);
 const REPLY_RE  = new RegExp(`^(.+?)\\s+-\\s+(\\d+)\\s+${LIKES_PAT}(?:\\s+\\[ts:(\\d+)\\])?:\\s+([\\s\\S]+)$`);
 
-export function parseCodexToBlocks(content: string): ThreadsBlock[] {
+export function parseCodexToBlocks(content: string): PostBlock[] {
   const parts = content.split(/\n-{9}\n/).map((s) => s.trim()).filter(Boolean);
-  const blocks: ThreadsBlock[] = [];
+  const blocks: PostBlock[] = [];
 
   parts.forEach((part, i) => {
     if (i === 0) {

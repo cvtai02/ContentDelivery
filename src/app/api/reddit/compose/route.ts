@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runCodex } from '@/lib/codex';
+import { fetchRedditThreads } from '@/lib/reddit-service';
+// RedditMeta is part of the response shape — imported for clarity
+import type { RedditContentDto } from '@/lib/reddit-service';
 import { buildPrompt } from '@/lib/codex-prompts';
-import { getRedditPostAndComments } from '@/lib/reddit';
+import { runCodex } from '@/lib/codex';
 import { decodeHtmlEntities } from '@/lib/utils';
+import { findImage } from '@/lib/find-image';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -15,30 +18,19 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { post, comments, top2Replies } = await getRedditPostAndComments(subreddit, postId);
+    const { contentDto: originalDto, meta } = await fetchRedditThreads(postId, subreddit, title);
 
-    const lines: string[] = [];
-    const body = post?.selftext?.trim().replace(/\n{3,}/g, '\n\n');
-    lines.push(body ? `${title}\n\n${body}` : title);
+    const [translatedRaw, imageUrl] = await Promise.all([
+      runCodex(buildPrompt('reddit', JSON.stringify(originalDto)), process.cwd(), 120_000).then(decodeHtmlEntities),
+      findImage(title),
+    ]);
 
-    for (let i = 0; i < comments.length; i++) {
-      const c = comments[i];
-      const commentBody = c.body.trim().replace(/\n{3,}/g, '\n\n');
-      const parts = [`---------\n${i + 1}. ${c.author} - ${c.score} likes. [ts:${c.createdAt}]\n${commentBody}`];
-      for (const r of top2Replies.filter((r) => r.parentIdx === i)) {
-        parts.push(`\n  ↳ ${r.author} - ${r.score} likes [ts:${r.createdAt}]: ${r.body.trim().replace(/\n{3,}/g, '\n\n')}`);
-      }
-      lines.push(parts.join('\n'));
-    }
+    const contentDto = JSON.parse(translatedRaw) as RedditContentDto;
 
-    const raw = lines.join('\n\n');
-    const prompt = buildPrompt('reddit', raw);
-    const content = decodeHtmlEntities(await runCodex(prompt, process.cwd(), 120_000));
-
-    return NextResponse.json({ content });
+    return NextResponse.json({ contentDto, meta, imageUrl });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to fetch post' },
+      { error: err instanceof Error ? err.message : 'Failed to compose' },
       { status: 500 },
     );
   }

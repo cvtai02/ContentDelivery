@@ -1,6 +1,6 @@
 'use client';
 
-import type { ThreadsBlock } from '@/lib/parseThreadsPost';
+import type { PostBlock } from '@/lib/parseThreadsPost';
 
 function formatCount(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
@@ -21,7 +21,7 @@ function formatRelativeTime(ts: number): string {
   return `${Math.floor(diffMo / 12)} năm trước`;
 }
 
-type Props = { block: ThreadsBlock; isLast?: boolean; hasReplies?: boolean };
+type Props = { block: PostBlock; isLast?: boolean; hasReplies?: boolean };
 
 export function ThreadsCard({ block, isLast = false, hasReplies = false }: Props) {
   const name = block.author ?? (block.isMain ? 'MyNews' : 'User');
