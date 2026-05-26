@@ -4,12 +4,11 @@ import { listFacebookPages } from '@/lib/facebook';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export async function GET() {
+export function GET() {
   try {
-    const pages = await listFacebookPages();
+    const pages = listFacebookPages();
 
     return NextResponse.json({
-      selectedPageId: process.env.FACEBOOK_PAGE_ID || null,
       pages,
     }, {
       headers: { 'Cache-Control': 'no-store' },

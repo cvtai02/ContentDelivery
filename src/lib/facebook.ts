@@ -1,6 +1,7 @@
 import type { TodayPost } from '@/types/today-post';
 import { createTodayPostIllustrationSvg } from '@/lib/today-post-illustration';
 import sharp from 'sharp';
+import { listFacebookTargets } from '@/lib/db';
 
 const GRAPH_BASE_URL = 'https://graph.facebook.com/v20.0';
 
@@ -16,14 +17,12 @@ type FacebookPostResponse = {
   error?: { message?: string };
 };
 
+export function listFacebookPages(): FacebookTarget[] {
+  return listTargets();
+}
+
 export function listTargets(): FacebookTarget[] {
-  const raw = process.env.FACEBOOK_TARGETS;
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw) as FacebookTarget[];
-  } catch {
-    return [];
-  }
+  return listFacebookTargets();
 }
 
 function getTarget(targetIdOrName?: string): FacebookTarget {

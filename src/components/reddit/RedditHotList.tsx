@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ComposeDialog } from '@/components/shared/ComposeDialog';
 import { ThreadsButton } from '@/components/shared/ThreadsButton';
-import { ThreadsDialog } from '@/components/shared/ThreadsDialog';
 import { PostStateButtons } from '@/components/shared/PostStateButtons';
 import { Skeleton } from '@/components/shared/Skeleton';
 import { SettingsButton } from '@/components/settings/SettingsButton';
+import { useThreads } from '@/hooks/useThreads';
 import { formatCount, timeAgo } from '@/lib/utils';
 import type { PostState } from '@/types/post';
-import type { ThreadsBlock } from '@/lib/parseThreadsPost';
+import type { ThreadsEntry } from '@/hooks/useThreads';
 
 type RedditPost = {
   id: string;
@@ -23,7 +23,6 @@ type RedditPost = {
   subreddit?: string;
 };
 
-type ThreadsEntry = { status: 'loading' | 'ready' | 'error'; blocks?: ThreadsBlock[] };
 
 const SUBREDDITS = ['antiwork', 'AskReddit', 'confession', 'AmItheAsshole', 'tifu', 'relationship_advice', 'personalfinance', 'legaladvice', 'raisedbynarcissists', 'JUSTNOMIL'];
 
@@ -119,8 +118,7 @@ export function RedditHotList() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [postStates, setPostStates] = useState<Record<string, PostState>>({});
   const [viewing, setViewing] = useState<RedditPost | null>(null);
-  const [threadsStates, setThreadsStates] = useState<Record<string, ThreadsEntry>>({});
-  const [viewingThreads, setViewingThreads] = useState<RedditPost | null>(null);
+  const { threadsStates, startThreads: triggerThreads, setViewingThreads, dialog } = useThreads();
 
   useEffect(() => {
     const interval = setInterval(() => setRefreshTick((v) => v + 1), 5 * 60 * 60 * 1000);
@@ -143,20 +141,9 @@ export function RedditHotList() {
     }
   }, []);
 
-  const startThreads = useCallback(async (post: RedditPost) => {
-    const id = post.id;
-    const subreddit = post.subreddit ?? 'AskReddit';
-    setThreadsStates((prev) => ({ ...prev, [id]: { status: 'loading' } }));
-    try {
-      const res = await fetch('/api/reddit/threads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: id, subreddit, title: post.title }) });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setThreadsStates((prev) => ({ ...prev, [id]: { status: 'ready', blocks: data.blocks } }));
-      setViewingThreads(post);
-    } catch {
-      setThreadsStates((prev) => ({ ...prev, [id]: { status: 'error' } }));
-    }
-  }, []);
+  const startThreads = useCallback((post: RedditPost) => {
+    triggerThreads(post.id, post.title, '/api/reddit/threads', { postId: post.id, subreddit: post.subreddit ?? 'AskReddit', title: post.title });
+  }, [triggerThreads]);
 
   const viewingState = viewing ? postStates[viewing.id] : null;
 
@@ -177,7 +164,7 @@ export function RedditHotList() {
             onStartGeneration={startGeneration}
             onView={setViewing}
             onStartThreads={startThreads}
-            onViewThreads={setViewingThreads}
+            onViewThreads={(post) => setViewingThreads({ id: post.id, title: post.title })}
           />
         ))}
       </div>
@@ -195,13 +182,7 @@ export function RedditHotList() {
         />
       )}
 
-      {viewingThreads && threadsStates[viewingThreads.id]?.status === 'ready' && (
-        <ThreadsDialog
-          blocks={threadsStates[viewingThreads.id].blocks!}
-          title={viewingThreads.title}
-          onClose={() => setViewingThreads(null)}
-        />
-      )}
+      {dialog}
     </>
   );
 }

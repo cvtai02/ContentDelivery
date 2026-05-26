@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getZhihuAnswers } from '@/lib/zhihu';
+import { getDiceBearAvatar } from '@/lib/avatar';
 import type { ThreadsBlock } from '@/lib/parseThreadsPost';
 
 export const dynamic = 'force-dynamic';
@@ -13,11 +14,15 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { questionAuthor, answers } = await getZhihuAnswers(questionId);
+    const { questionAuthor, questionCreatedAt, answers } = await getZhihuAnswers(questionId);
+
+    const uniqueAuthors = [...new Set([questionAuthor || '知乎', ...answers.map((a) => a.author)].filter(Boolean))];
+    const avatarMap = new Map<string, string>();
+    await Promise.all(uniqueAuthors.map(async (a) => { avatarMap.set(a, await getDiceBearAvatar(a)); }));
 
     const blocks: ThreadsBlock[] = [
-      { text: title, author: questionAuthor || '知乎', score: 0, isMain: true },
-      ...answers.map((a) => ({ text: a.content, author: a.author, score: a.score, isMain: false, createdAt: a.createdAt })),
+      { text: title, author: questionAuthor || '知乎', avatarUrl: avatarMap.get(questionAuthor || '知乎'), score: 0, isMain: true, createdAt: questionCreatedAt },
+      ...answers.map((a) => ({ text: a.content, author: a.author, avatarUrl: avatarMap.get(a.author), score: a.score, isMain: false, createdAt: a.createdAt })),
     ];
 
     return NextResponse.json({ blocks });

@@ -88,7 +88,7 @@ export async function getRedditPostAndComments(subreddit: string, postId: string
   if (!res.ok) throw new Error(`Reddit API error: ${res.status}`);
 
   const [postListing, commentsListing] = await res.json() as [
-    { data: { children: [{ data: { title: string; selftext: string; author: string; created_utc: number } }] } },
+    { data: { children: [{ data: { title: string; selftext: string; author: string; score: number; created_utc: number } }] } },
     { data: { children: RawComment[] } },
   ];
 

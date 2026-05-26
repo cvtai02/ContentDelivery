@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runCodex } from '@/lib/codex';
+import { buildPrompt } from '@/lib/codex-prompts';
 import { getZhihuAnswers } from '@/lib/zhihu';
+import { decodeHtmlEntities } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -17,12 +19,12 @@ export async function POST(req: NextRequest) {
 
     const lines: string[] = [title];
     answers.forEach((a, i) => {
-      lines.push(`---------\n${i + 1}. ${a.author} - ${a.score} likes.\n${a.content}`);
+      lines.push(`---------\n${i + 1}. ${a.author} - ${a.score} likes. [ts:${a.createdAt}]\n${a.content}`);
     });
 
     const raw = lines.join('\n\n');
-    const prompt = `Translate the following Zhihu question and answers to Vietnamese. Keep the exact format and structure. Only translate the text — do not add, remove, or rewrite anything. Do NOT translate lines that start with "Comment" (e.g. "Comment 1. AuthorName - 123 likes." must stay unchanged).\n\n${raw}`;
-    const content = await runCodex(prompt, process.cwd(), 120_000);
+    const prompt = buildPrompt('zhihu', raw);
+    const content = decodeHtmlEntities(await runCodex(prompt, process.cwd(), 120_000));
 
     return NextResponse.json({ content });
   } catch (err) {

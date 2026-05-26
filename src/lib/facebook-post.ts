@@ -10,7 +10,7 @@ export async function handleFacebookPost(req: NextRequest, section: string) {
   }
 
   try {
-    const targetId = await getSectionTargetId(section);
+    const targetId = getSectionTargetId(section);
     const result = imageUrl
       ? await publishWithImageToFacebook(content, imageUrl, targetId)
       : await publishTextToFacebook(content, targetId);

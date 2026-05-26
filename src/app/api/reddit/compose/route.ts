@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runCodex } from '@/lib/codex';
+import { buildPrompt } from '@/lib/codex-prompts';
 import { getRedditPostAndComments } from '@/lib/reddit';
+import { decodeHtmlEntities } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -22,16 +24,16 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < comments.length; i++) {
       const c = comments[i];
       const commentBody = c.body.trim().replace(/\n{3,}/g, '\n\n');
-      const parts = [`---------\n${i + 1}. ${c.author} - ${c.score} likes.\n${commentBody}`];
+      const parts = [`---------\n${i + 1}. ${c.author} - ${c.score} likes. [ts:${c.createdAt}]\n${commentBody}`];
       for (const r of top2Replies.filter((r) => r.parentIdx === i)) {
-        parts.push(`\n  ↳ ${r.author} - ${r.score} likes: ${r.body.trim().replace(/\n{3,}/g, '\n\n')}`);
+        parts.push(`\n  ↳ ${r.author} - ${r.score} likes [ts:${r.createdAt}]: ${r.body.trim().replace(/\n{3,}/g, '\n\n')}`);
       }
       lines.push(parts.join('\n'));
     }
 
     const raw = lines.join('\n\n');
-    const prompt = `Translate the following Reddit post and comments to Vietnamese. Keep the exact format and structure. Only translate the text — do not add, remove, or rewrite anything. Do NOT translate lines that start with "Comment" (e.g. "Comment 1. AuthorName - 123 likes." must stay unchanged).\n\n${raw}`;
-    const content = await runCodex(prompt, process.cwd(), 120_000);
+    const prompt = buildPrompt('reddit', raw);
+    const content = decodeHtmlEntities(await runCodex(prompt, process.cwd(), 120_000));
 
     return NextResponse.json({ content });
   } catch (err) {

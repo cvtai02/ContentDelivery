@@ -11,6 +11,19 @@ type Config = {
   targets: MaskedTarget[];
 };
 
+const AUDIO_KEY = 'audio';
+
+async function postJson<T>(url: string, body: object): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({})) as T & { error?: string };
+  if (!res.ok) throw new Error(data.error ?? `Request failed: ${res.status}`);
+  return data;
+}
+
 function Field({ label, value, onChange, placeholder, type = 'text', hint }: {
   label: string;
   value: string;
@@ -53,16 +66,42 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [tokenMessage, setTokenMessage] = useState('');
   const [tokenError, setTokenError] = useState('');
 
+  // Audio prompt section
+  const [audioPrompt, setAudioPrompt] = useState('');
+  const [audioDefault, setAudioDefault] = useState('');
+  const [audioSaved, setAudioSaved] = useState('');
+  const [audioSaving, setAudioSaving] = useState(false);
+  const [audioMessage, setAudioMessage] = useState('');
+
   useEffect(() => {
-    fetch('/api/settings')
-      .then((r) => r.json())
-      .then((d: Config) => {
-        setConfig(d);
-        setAppId(d.appId ?? '');
-        setFetching(false);
-      })
-      .catch(() => setFetching(false));
+    Promise.all([
+      fetch('/api/settings').then((r) => r.json()),
+      fetch('/api/prompts').then((r) => r.json()),
+    ]).then(([d, pd]: [Config, { prompts: Record<string, string>; defaults: Record<string, string> }]) => {
+      setConfig(d);
+      setAppId(d.appId ?? '');
+      const val = pd.prompts[AUDIO_KEY] ?? '';
+      setAudioPrompt(val);
+      setAudioSaved(val);
+      setAudioDefault(pd.defaults[AUDIO_KEY] ?? '');
+      setFetching(false);
+    }).catch(() => setFetching(false));
   }, []);
+
+  async function saveAudioPrompt() {
+    setAudioSaving(true);
+    setAudioMessage('');
+    try {
+      const isDefault = audioPrompt === audioDefault;
+      await postJson('/api/prompts', { key: AUDIO_KEY, template: isDefault ? null : audioPrompt });
+      setAudioSaved(audioPrompt);
+      setAudioMessage('Đã lưu.');
+    } catch {
+      setAudioMessage('Lỗi khi lưu.');
+    } finally {
+      setAudioSaving(false);
+    }
+  }
 
   async function saveCreds(e: React.FormEvent) {
     e.preventDefault();
@@ -70,13 +109,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     setCredError('');
     setCredMessage('');
     try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appId: appId || undefined, appSecret: appSecret || undefined }),
-      });
-      const data = await res.json() as Config & { error?: string };
-      if (!res.ok) throw new Error(data.error);
+      const data = await postJson<Config>('/api/settings', { appId: appId || undefined, appSecret: appSecret || undefined });
       setConfig({ appId: data.appId, appSecret: data.appSecret, targets: data.targets });
       setAppSecret('');
       setCredMessage('Đã lưu.');
@@ -94,13 +127,10 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     setTokenMessage('');
     setAvailablePages([]);
     try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userToken: userToken || undefined, pageId: pageId || undefined }),
-      });
-      const data = await res.json() as Config & { added?: string; availablePages?: AvailablePage[]; error?: string };
-      if (!res.ok) throw new Error(data.error);
+      const data = await postJson<Config & { added?: string; availablePages?: AvailablePage[] }>(
+        '/api/settings',
+        { userToken: userToken || undefined, pageId: pageId || undefined },
+      );
       setConfig({ appId: data.appId, appSecret: data.appSecret, targets: data.targets });
       setUserToken('');
       setPageId('');
@@ -230,6 +260,46 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             </button>
           </div>
         </form>
+
+        <hr className="border-divider" />
+
+        {/* Audio prompt */}
+        <div className="flex flex-col gap-3">
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide">Audio Script Prompt</p>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-muted">Prompt Template</label>
+              {audioPrompt !== audioDefault && (
+                <button
+                  onClick={() => setAudioPrompt(audioDefault)}
+                  className="text-xs text-muted hover:text-primary bg-transparent border-none cursor-pointer"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+            <textarea
+              value={audioPrompt}
+              onChange={(e) => setAudioPrompt(e.target.value)}
+              rows={7}
+              spellCheck={false}
+              className="w-full rounded-xl border border-divider bg-surface px-3 py-2 text-xs text-primary font-mono outline-none focus:border-accent resize-y"
+            />
+            <p className="text-[10px] text-muted">
+              Use <code className="bg-surface px-1 rounded">{'{{content}}'}</code> where the article content is inserted.
+            </p>
+          </div>
+          {audioMessage && <p className="text-xs text-accent">{audioMessage}</p>}
+          <div className="flex justify-end">
+            <button
+              onClick={saveAudioPrompt}
+              disabled={audioSaving || audioPrompt === audioSaved}
+              className="rounded-lg bg-accent px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              {audioSaving ? 'Đang lưu…' : 'Lưu'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

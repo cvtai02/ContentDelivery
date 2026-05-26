@@ -3,12 +3,11 @@
 import { useEffect, useState } from 'react';
 import { ComposeDialog } from '@/components/shared/ComposeDialog';
 import { ThreadsButton } from '@/components/shared/ThreadsButton';
-import { ThreadsDialog } from '@/components/shared/ThreadsDialog';
 import { PostStateButtons } from '@/components/shared/PostStateButtons';
 import { Skeleton } from '@/components/shared/Skeleton';
 import { SettingsButton } from '@/components/settings/SettingsButton';
+import { useThreads } from '@/hooks/useThreads';
 import type { PostState } from '@/types/post';
-import type { ThreadsBlock } from '@/lib/parseThreadsPost';
 
 type ZhihuQuestion = {
   id: string;
@@ -19,7 +18,6 @@ type ZhihuQuestion = {
   url: string;
 };
 
-type ThreadsEntry = { status: 'loading' | 'ready' | 'error'; blocks?: ThreadsBlock[] };
 
 const SELECT_CLS = 'text-xs text-muted outline-none bg-transparent border-none cursor-pointer appearance-none underline underline-offset-2';
 
@@ -30,8 +28,7 @@ export function ZhihuHotList() {
   const [limit, setLimit] = useState(10);
   const [postStates, setPostStates] = useState<Record<string, PostState>>({});
   const [viewing, setViewing] = useState<ZhihuQuestion | null>(null);
-  const [threadsStates, setThreadsStates] = useState<Record<string, ThreadsEntry>>({});
-  const [viewingThreads, setViewingThreads] = useState<ZhihuQuestion | null>(null);
+  const { threadsStates, startThreads: triggerThreads, setViewingThreads, dialog } = useThreads();
 
   useEffect(() => {
     setLoading(true);
@@ -63,18 +60,8 @@ export function ZhihuHotList() {
     }
   }
 
-  async function startThreads(question: ZhihuQuestion) {
-    const id = question.id;
-    setThreadsStates((prev) => ({ ...prev, [id]: { status: 'loading' } }));
-    try {
-      const res = await fetch('/api/zhihu/threads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ questionId: id, title: question.title }) });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setThreadsStates((prev) => ({ ...prev, [id]: { status: 'ready', blocks: data.blocks } }));
-      setViewingThreads(question);
-    } catch {
-      setThreadsStates((prev) => ({ ...prev, [id]: { status: 'error' } }));
-    }
+  function startThreads(question: ZhihuQuestion) {
+    triggerThreads(question.id, question.title, '/api/zhihu/threads', { questionId: question.id, title: question.title });
   }
 
   const viewingState = viewing ? postStates[viewing.id] : null;
@@ -108,7 +95,7 @@ export function ZhihuHotList() {
                       <ThreadsButton
                         status={ts?.status ?? 'none'}
                         onGenerate={() => startThreads(q)}
-                        onView={() => setViewingThreads(q)}
+                        onView={() => setViewingThreads({ id: q.id, title: q.title })}
                       />
                       <PostStateButtons
                         state={ps?.status ?? 'none'}
@@ -138,13 +125,7 @@ export function ZhihuHotList() {
         />
       )}
 
-      {viewingThreads && threadsStates[viewingThreads.id]?.status === 'ready' && (
-        <ThreadsDialog
-          blocks={threadsStates[viewingThreads.id].blocks!}
-          title={viewingThreads.title}
-          onClose={() => setViewingThreads(null)}
-        />
-      )}
+      {dialog}
     </>
   );
 }

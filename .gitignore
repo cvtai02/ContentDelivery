@@ -1,3 +1,5 @@
+/.cache/
+
 # dependencies
 /node_modules
 /.pnp
@@ -18,6 +20,11 @@
 /.claude/
 /.playwright/
 /.codex/
+
+# sqlite database
+/mynews.db
+/mynews.db-shm
+/mynews.db-wal
 
 # debug
 npm-debug.log*

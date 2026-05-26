@@ -1,10 +1,11 @@
 import { withCache } from '@/lib/cache';
 import { stripHtml } from '@/lib/utils';
+import { getSetting } from '@/lib/db';
 
 export const ZHIHU_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 function zhihuHeaders(extra?: Record<string, string>) {
-  const cookie = process.env.ZHIHU_COOKIE;
+  const cookie = getSetting('ZHIHU_COOKIE');
   return {
     'User-Agent': ZHIHU_USER_AGENT,
     ...(cookie ? { 'Cookie': cookie } : {}),
@@ -28,7 +29,10 @@ export async function getZhihuTravelQuestions(limit = 10): Promise<ZhihuQuestion
       { headers: zhihuHeaders({ 'Referer': 'https://www.zhihu.com/topic/19553092/hot' }) },
     );
 
-    if (!res.ok) throw new Error(`Zhihu API error: ${res.status}`);
+    if (!res.ok) {
+      if (res.status === 403) return getZhihuHotQuestions(limit);
+      throw new Error(`Zhihu API error: ${res.status}`);
+    }
 
     const data = await res.json() as {
       data: Array<{
@@ -52,8 +56,8 @@ export async function getZhihuTravelQuestions(limit = 10): Promise<ZhihuQuestion
 }
 
 export async function getZhihuHotQuestions(limit = 10): Promise<ZhihuQuestion[]> {
-  if (!process.env.ZHIHU_COOKIE) {
-    throw new Error('ZHIHU_COOKIE chưa được cấu hình. Lấy cookie z_c0 từ trình duyệt khi đăng nhập Zhihu và thêm vào .env');
+  if (!getSetting('ZHIHU_COOKIE')) {
+    throw new Error('ZHIHU_COOKIE chưa được cấu hình. Vào Settings để nhập cookie z_c0 từ trình duyệt khi đăng nhập Zhihu.');
   }
 
   return withCache(`zhihu_hot_${limit}`, 30 * 60 * 1000, async () => {
@@ -94,9 +98,10 @@ export type ZhihuAnswer = { author: string; score: number; content: string; crea
 
 export async function getZhihuAnswers(questionId: string): Promise<{
   questionAuthor: string;
+  questionCreatedAt?: number;
   answers: ZhihuAnswer[];
 }> {
-  const cookie = process.env.ZHIHU_COOKIE;
+  const cookie = getSetting('ZHIHU_COOKIE');
   const headers = {
     'User-Agent': ZHIHU_USER_AGENT,
     'Referer': `https://www.zhihu.com/question/${questionId}`,
@@ -115,12 +120,13 @@ export async function getZhihuAnswers(questionId: string): Promise<{
     qRes.ok ? qRes.json() : Promise.resolve(null),
     aRes.json(),
   ]) as [
-    { author?: { name: string } } | null,
+    { author?: { name: string }; created?: number } | null,
     { data: Array<{ author: { name: string }; voteup_count: number; content: string; created_time: number }> },
   ];
 
   return {
     questionAuthor: qData?.author?.name ?? '',
+    questionCreatedAt: qData?.created,
     answers: aData.data.map((a) => ({
       author: a.author.name,
       score: a.voteup_count,

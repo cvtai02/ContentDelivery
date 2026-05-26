@@ -14,7 +14,7 @@ function codexCommand() {
   return { exe: 'codex', prefix: [] };
 }
 
-export async function runCodex(prompt: string, cwd: string, timeoutMs = 120_000): Promise<string> {
+export async function runCodex(prompt: string, cwd: string, timeoutMs = 300_000): Promise<string> {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'codex-out-'));
   const outputPath = path.join(tempDir, 'out.txt');
   const { exe, prefix } = codexCommand();

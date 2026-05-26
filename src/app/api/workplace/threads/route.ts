@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSEQuestionAndAnswers } from '@/lib/stackexchange';
+import { getDiceBearAvatar } from '@/lib/avatar';
 import type { ThreadsBlock } from '@/lib/parseThreadsPost';
 
 export const dynamic = 'force-dynamic';
@@ -13,13 +14,18 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { body, questionAuthor, answers } = await getSEQuestionAndAnswers(questionId);
+    const { body, questionAuthor, questionCreatedAt, questionScore, answers } = await getSEQuestionAndAnswers(questionId);
+
+    const uniqueAuthors = [...new Set([questionAuthor || 'The Workplace', ...answers.map((a) => a.author)].filter(Boolean))];
+    const avatarMap = new Map<string, string>();
+    await Promise.all(uniqueAuthors.map(async (a) => { avatarMap.set(a, await getDiceBearAvatar(a)); }));
 
     const blocks: ThreadsBlock[] = [
-      { text: body ? `${title}\n\n${body}` : title, author: questionAuthor || 'The Workplace', score: 0, isMain: true },
+      { text: body ? `${title}\n\n${body}` : title, author: questionAuthor || 'The Workplace', avatarUrl: avatarMap.get(questionAuthor || 'The Workplace'), score: questionScore ?? 0, isMain: true, createdAt: questionCreatedAt },
       ...answers.map((a) => ({
         text: a.body,
         author: a.accepted ? `✓ ${a.author}` : a.author,
+        avatarUrl: avatarMap.get(a.author),
         score: a.score,
         isMain: false,
         createdAt: a.createdAt,

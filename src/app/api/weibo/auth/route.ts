@@ -1,20 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
+import { getSetting } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const envPath = path.join(process.cwd(), '.env.local');
-
-function parseEnvValue(raw: string, key: string): string {
-  const match = raw.match(new RegExp(`^${key}=(.*)$`, 'm'));
-  return match ? match[1].trim().replace(/^["']|["']$/g, '') : '';
-}
-
-export async function GET(req: NextRequest) {
-  const raw = await readFile(envPath, 'utf8').catch(() => '');
-  const appKey = parseEnvValue(raw, 'WEIBO_APP_KEY');
+export function GET(req: NextRequest) {
+  const appKey = getSetting('WEIBO_APP_KEY');
 
   if (!appKey) {
     return NextResponse.json({ error: 'WEIBO_APP_KEY chưa được cấu hình' }, { status: 400 });

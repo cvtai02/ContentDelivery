@@ -3,13 +3,13 @@
 import { useEffect, useState } from 'react';
 import { ComposeDialog } from '@/components/shared/ComposeDialog';
 import { ThreadsButton } from '@/components/shared/ThreadsButton';
-import { ThreadsDialog } from '@/components/shared/ThreadsDialog';
 import { PostStateButtons } from '@/components/shared/PostStateButtons';
 import { Skeleton } from '@/components/shared/Skeleton';
 import { SettingsButton } from '@/components/settings/SettingsButton';
+import { useThreads } from '@/hooks/useThreads';
+import type { ThreadsEntry } from '@/hooks/useThreads';
 import { formatCount, timeAgo } from '@/lib/utils';
 import type { PostState } from '@/types/post';
-import type { ThreadsBlock } from '@/lib/parseThreadsPost';
 
 type RedditPost = {
   id: string;
@@ -33,7 +33,6 @@ type ComposeTarget =
   | { kind: 'reddit'; post: RedditPost }
   | { kind: 'zhihu'; question: ZhihuQuestion };
 
-type ThreadsEntry = { status: 'loading' | 'ready' | 'error'; blocks?: ThreadsBlock[] };
 
 const SELECT_CLS = 'text-xs text-muted outline-none bg-transparent border-none cursor-pointer appearance-none underline underline-offset-2';
 
@@ -178,8 +177,7 @@ function ZhihuTravelSection({ postStates, threadsStates, onStartGeneration, onVi
 export function GetGoHotList() {
   const [postStates, setPostStates] = useState<Record<string, PostState>>({});
   const [viewing, setViewing] = useState<ComposeTarget | null>(null);
-  const [threadsStates, setThreadsStates] = useState<Record<string, ThreadsEntry>>({});
-  const [viewingThreads, setViewingThreads] = useState<{ id: string; title: string } | null>(null);
+  const { threadsStates, startThreads: triggerThreads, setViewingThreads, dialog } = useThreads();
 
   async function startGeneration(target: ComposeTarget) {
     const id = target.kind === 'reddit' ? target.post.id : target.question.id;
@@ -201,18 +199,6 @@ export function GetGoHotList() {
     }
   }
 
-  async function startThreads(id: string, title: string, endpoint: string, body: object) {
-    setThreadsStates((prev) => ({ ...prev, [id]: { status: 'loading' } }));
-    try {
-      const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setThreadsStates((prev) => ({ ...prev, [id]: { status: 'ready', blocks: data.blocks } }));
-      setViewingThreads({ id, title });
-    } catch {
-      setThreadsStates((prev) => ({ ...prev, [id]: { status: 'error' } }));
-    }
-  }
 
   const viewingId = viewing ? (viewing.kind === 'reddit' ? viewing.post.id : viewing.question.id) : null;
   const viewingState = viewingId ? postStates[viewingId] : null;
@@ -231,7 +217,7 @@ export function GetGoHotList() {
           threadsStates={threadsStates}
           onStartGeneration={(post) => startGeneration({ kind: 'reddit', post })}
           onView={(post) => setViewing({ kind: 'reddit', post })}
-          onStartThreads={(post) => startThreads(post.id, post.title, '/api/reddit/threads', { postId: post.id, subreddit: 'travel', title: post.title })}
+          onStartThreads={(post) => triggerThreads(post.id, post.title, '/api/reddit/threads', { postId: post.id, subreddit: 'travel', title: post.title })}
           onViewThreads={(post) => setViewingThreads({ id: post.id, title: post.title })}
         />
         <ZhihuTravelSection
@@ -239,7 +225,7 @@ export function GetGoHotList() {
           threadsStates={threadsStates}
           onStartGeneration={(q) => startGeneration({ kind: 'zhihu', question: q })}
           onView={(q) => setViewing({ kind: 'zhihu', question: q })}
-          onStartThreads={(q) => startThreads(q.id, q.title, '/api/zhihu/threads', { questionId: q.id, title: q.title })}
+          onStartThreads={(q) => triggerThreads(q.id, q.title, '/api/zhihu/threads', { questionId: q.id, title: q.title })}
           onViewThreads={(q) => setViewingThreads({ id: q.id, title: q.title })}
         />
       </div>
@@ -258,13 +244,7 @@ export function GetGoHotList() {
         />
       )}
 
-      {viewingThreads && threadsStates[viewingThreads.id]?.status === 'ready' && (
-        <ThreadsDialog
-          blocks={threadsStates[viewingThreads.id].blocks!}
-          title={viewingThreads.title}
-          onClose={() => setViewingThreads(null)}
-        />
-      )}
+      {dialog}
     </>
   );
 }

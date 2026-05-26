@@ -1,48 +1,45 @@
 /**
  * Exchange a Facebook user token for a never-expiring Page Access Token,
- * then append (or update) it in the FACEBOOK_TARGETS array in .env.local.
+ * then upsert it in the facebook_targets table in mynews.db.
  *
  * Usage:
  *   node scripts/facebook-token.mjs [--page-id=PAGE_ID]
  *
- * Requires in .env.local:
+ * Requires in the DB (set via Settings UI):
  *   FACEBOOK_ACCESS_TOKEN   — fresh user token from developers.facebook.com/tools/explorer
  *   FACEBOOK_APP_ID         — from your app → Settings → Basic
  *   FACEBOOK_APP_SECRET     — same place
  */
 
-import { readFile, writeFile } from 'node:fs/promises';
+import Database from 'better-sqlite3';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const envPath = path.join(__dirname, '..', '.env.local');
+const dbPath = path.join(__dirname, '..', 'mynews.db');
 const GRAPH = 'https://graph.facebook.com/v20.0';
 
 const pageIdArg = process.argv.find((a) => a.startsWith('--page-id='));
 const targetPageId = pageIdArg?.slice('--page-id='.length);
 
-async function loadEnv() {
-  const raw = await readFile(envPath, 'utf8');
-  const env = {};
-  for (const line of raw.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    const value = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
-    env[key] = value;
-  }
-  return env;
+function openDb() {
+  const db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
+    CREATE TABLE IF NOT EXISTS facebook_targets (id TEXT PRIMARY KEY, name TEXT NOT NULL, token TEXT NOT NULL);
+  `);
+  return db;
 }
 
-async function patchEnv(key, value) {
-  const raw = await readFile(envPath, 'utf8');
-  const pattern = new RegExp(`^${key}=.*$`, 'm');
-  const line = `${key}=${value}`;
-  const patched = pattern.test(raw) ? raw.replace(pattern, line) : `${raw.trimEnd()}\n${line}\n`;
-  await writeFile(envPath, patched, 'utf8');
+function getSetting(db, key) {
+  return db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value ?? '';
+}
+
+function upsertTarget(db, target) {
+  db.prepare(
+    'INSERT INTO facebook_targets (id, name, token) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, token = excluded.token',
+  ).run(target.id, target.name, target.token);
 }
 
 async function get(url, label) {
@@ -53,14 +50,16 @@ async function get(url, label) {
 }
 
 async function main() {
-  const env = await loadEnv();
-  const { FACEBOOK_ACCESS_TOKEN: userToken, FACEBOOK_APP_ID: appId, FACEBOOK_APP_SECRET: appSecret } = env;
+  const db = openDb();
 
-  if (!userToken) throw new Error('FACEBOOK_ACCESS_TOKEN missing');
-  if (!appId) throw new Error('FACEBOOK_APP_ID missing');
-  if (!appSecret) throw new Error('FACEBOOK_APP_SECRET missing');
+  const userToken = getSetting(db, 'FACEBOOK_ACCESS_TOKEN');
+  const appId = getSetting(db, 'FACEBOOK_APP_ID');
+  const appSecret = getSetting(db, 'FACEBOOK_APP_SECRET');
 
-  // Step 1: short-lived → long-lived user token
+  if (!userToken) throw new Error('FACEBOOK_ACCESS_TOKEN missing in DB — set it via the Settings UI');
+  if (!appId) throw new Error('FACEBOOK_APP_ID missing in DB');
+  if (!appSecret) throw new Error('FACEBOOK_APP_SECRET missing in DB');
+
   console.log('Step 1: Exchanging for long-lived user token…');
   const { access_token: longToken } = await get(
     `${GRAPH}/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${userToken}`,
@@ -68,7 +67,6 @@ async function main() {
   );
   console.log('  Done.');
 
-  // Step 2: get page access tokens (never expire)
   console.log('Step 2: Fetching page list…');
   const { data: pages } = await get(`${GRAPH}/me/accounts?fields=id,name,access_token&access_token=${longToken}`, 'Accounts');
 
@@ -79,28 +77,13 @@ async function main() {
 
   console.log(`  Page: ${page.name} (${page.id})`);
 
-  // Step 3: merge into FACEBOOK_TARGETS
-  let targets = [];
-  try {
-    targets = JSON.parse(env.FACEBOOK_TARGETS ?? '[]');
-  } catch { /* start fresh */ }
+  upsertTarget(db, { id: page.id, name: page.name, token: page.access_token });
 
-  const existing = targets.findIndex((t) => t.id === page.id);
-  const entry = { id: page.id, name: page.name, token: page.access_token };
+  const all = db.prepare('SELECT id, name FROM facebook_targets').all();
+  console.log('\nDone! facebook_targets in mynews.db:');
+  all.forEach((t, i) => console.log(`  [${i}] ${t.name} (${t.id})`));
 
-  if (existing >= 0) {
-    targets[existing] = entry;
-    console.log('  Updated existing target.');
-  } else {
-    targets.push(entry);
-    console.log('  Added new target.');
-  }
-
-  await patchEnv('FACEBOOK_TARGETS', JSON.stringify(targets));
-
-  console.log('\nDone! FACEBOOK_TARGETS updated in .env.local:');
-  targets.forEach((t, i) => console.log(`  [${i}] ${t.name} (${t.id})`));
-  console.log('\nRestart Next.js để áp dụng.');
+  db.close();
 }
 
 main().catch((err) => {

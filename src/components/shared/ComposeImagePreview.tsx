@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 
 export function ComposeImagePreview({
   imageUrl,
@@ -38,9 +39,12 @@ export function ComposeImagePreview({
         )}
       </div>
       {visible && (
-        <img
+        <Image
           src={imageUrl}
           alt="Post illustration"
+          width={1200}
+          height={630}
+          unoptimized
           className="w-full rounded-xl object-contain"
         />
       )}

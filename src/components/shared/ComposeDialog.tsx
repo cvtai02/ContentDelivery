@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { ComposeImagePreview } from '@/components/shared/ComposeImagePreview';
 import { ThreadsDialog } from '@/components/shared/ThreadsDialog';
 import { AudioScriptDialog } from '@/components/shared/AudioScriptDialog';
@@ -132,8 +133,7 @@ export function ComposeDialog({
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              style={{ fieldSizing: 'content' } as any}
+              style={{ fieldSizing: 'content' } as CSSProperties & { fieldSizing?: string }}
               className="w-full resize-none min-h-[200px] rounded-xl border border-divider bg-surface p-3 text-sm text-primary outline-none focus:border-accent"
             />
           </div>

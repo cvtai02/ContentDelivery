@@ -4,10 +4,12 @@ import { WeiboHotList }  from '@/components/weibo/WeiboHotList';
 import { ZhihuHotList }     from '@/components/zhihu/ZhihuHotList';
 import { WorkplaceHotList } from '@/components/workplace/WorkplaceHotList';
 import { GetGoHotList }     from '@/components/getgo/GetGoHotList';
+import SettingsButton from '@/components/shared/SettingsButton';
 
 export default function Home() {
   return (
     <main className="min-h-screen bg-page">
+      <SettingsButton />
       <div className="grid grid-cols-3 items-start">
         {/* Col 1 */}
         <div className="col-span-3 lg:col-span-1 flex flex-col">

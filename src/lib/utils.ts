@@ -9,6 +9,16 @@ export function timeAgo(utc: number) {
   return `${Math.floor(diff / 86400)}d`;
 }
 
+export function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+}
+
 export function stripHtml(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, '\n')

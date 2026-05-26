@@ -3,6 +3,7 @@ export type ThreadsBlock = {
   isMain: boolean;
   isReply?: boolean;
   author?: string;
+  avatarUrl?: string;
   score?: number;
   createdAt?: number;
 };
@@ -14,8 +15,8 @@ export function parseThreadsPost(content: string): ThreadsBlock[] {
 }
 
 const LIKES_PAT = /(?:likes?|lượt thích)/.source;
-const HEADER_RE = new RegExp(`^\\d+\\.\\s+(.+?)\\s+-\\s+(\\d+)\\s+${LIKES_PAT}\\.`);
-const REPLY_RE  = new RegExp(`^(.+?)\\s+-\\s+(\\d+)\\s+${LIKES_PAT}:\\s+([\\s\\S]+)$`);
+const HEADER_RE = new RegExp(`^\\d+\\.\\s+(.+?)\\s+-\\s+(\\d+)\\s+${LIKES_PAT}\\.(?:\\s+\\[ts:(\\d+)\\])?`);
+const REPLY_RE  = new RegExp(`^(.+?)\\s+-\\s+(\\d+)\\s+${LIKES_PAT}(?:\\s+\\[ts:(\\d+)\\])?:\\s+([\\s\\S]+)$`);
 
 export function parseCodexToBlocks(content: string): ThreadsBlock[] {
   const parts = content.split(/\n-{9}\n/).map((s) => s.trim()).filter(Boolean);
@@ -35,15 +36,17 @@ export function parseCodexToBlocks(content: string): ThreadsBlock[] {
       text: lines.slice(1).join('\n').trim(),
       author: headerMatch[1].trim(),
       score: parseInt(headerMatch[2], 10),
+      createdAt: headerMatch[3] ? parseInt(headerMatch[3], 10) : undefined,
       isMain: false,
     } : { text: commentPart.trim(), isMain: false });
 
     for (const reply of replyParts) {
       const replyMatch = reply.match(REPLY_RE);
       blocks.push(replyMatch ? {
-        text: replyMatch[3].trim(),
+        text: replyMatch[4].trim(),
         author: replyMatch[1].trim(),
         score: parseInt(replyMatch[2], 10),
+        createdAt: replyMatch[3] ? parseInt(replyMatch[3], 10) : undefined,
         isMain: false,
         isReply: true,
       } : { text: reply.trim(), isMain: false, isReply: true });

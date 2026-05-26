@@ -1,8 +1,13 @@
 import { withCache } from '@/lib/cache';
 import { stripHtml } from '@/lib/utils';
+import { getSetting } from '@/lib/db';
 
 const BASE = 'https://api.stackexchange.com/2.3';
-const KEY = process.env.STACKEXCHANGE_KEY ? `&key=${process.env.STACKEXCHANGE_KEY}` : '';
+
+function seKey(): string {
+  const k = getSetting('STACKEXCHANGE_KEY');
+  return k ? `&key=${k}` : '';
+}
 
 export type SEQuestion = {
   id: number;
@@ -18,7 +23,7 @@ export type SEQuestion = {
 export async function getWorkplaceHotQuestions(sort = 'votes', limit = 10): Promise<SEQuestion[]> {
   return withCache(`workplace_${sort}_${limit}`, 6 * 60 * 60 * 1000, async () => {
     const res = await fetch(
-      `${BASE}/questions?order=desc&sort=${sort}&site=workplace&pagesize=${limit}&filter=default${KEY}`,
+      `${BASE}/questions?order=desc&sort=${sort}&site=workplace&pagesize=${limit}&filter=default${seKey()}`,
     );
 
     if (!res.ok) throw new Error(`Stack Exchange API error: ${res.status}`);
@@ -55,20 +60,22 @@ export type SEAnswer = { author: string; score: number; accepted: boolean; body:
 
 export async function getSEQuestionAndAnswers(questionId: number) {
   const [qRes, aRes] = await Promise.all([
-    fetch(`${BASE}/questions/${questionId}?site=workplace&filter=withbody${KEY}`),
-    fetch(`${BASE}/questions/${questionId}/answers?order=desc&sort=votes&site=workplace&filter=withbody&pagesize=5${KEY}`),
+    fetch(`${BASE}/questions/${questionId}?site=workplace&filter=withbody${seKey()}`),
+    fetch(`${BASE}/questions/${questionId}/answers?order=desc&sort=votes&site=workplace&filter=withbody&pagesize=5${seKey()}`),
   ]);
   if (!qRes.ok) throw new Error(`Stack Exchange API error: ${qRes.status}`);
   if (!aRes.ok) throw new Error(`Stack Exchange API error: ${aRes.status}`);
 
   const [qData, aData] = await Promise.all([qRes.json(), aRes.json()]) as [
-    { items: Array<{ body: string; owner: { display_name: string } }> },
+    { items: Array<{ body: string; owner: { display_name: string }; creation_date?: number; score?: number }> },
     { items: Array<{ body: string; score: number; owner: { display_name: string }; is_accepted: boolean; creation_date: number }> },
   ];
 
   return {
     body: stripHtml(qData.items[0]?.body ?? ''),
     questionAuthor: qData.items[0]?.owner.display_name ?? '',
+    questionCreatedAt: qData.items[0]?.creation_date,
+    questionScore: qData.items[0]?.score,
     answers: aData.items.map((a) => ({
       author: a.owner.display_name,
       score: a.score,
