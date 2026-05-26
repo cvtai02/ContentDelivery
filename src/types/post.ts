@@ -1,0 +1,8 @@
+export type PostStatus = 'none' | 'generating' | 'ready' | 'error';
+
+export type PostState = {
+  status: Exclude<PostStatus, 'none'>;
+  content: string;
+  imageUrl: string | null;
+  error: string;
+};

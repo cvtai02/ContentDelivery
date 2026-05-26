@@ -1,8 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ComposeImagePreview } from '@/components/shared/ComposeImagePreview';
+import { useEffect, useState } from 'react';
+import { ComposeDialog } from '@/components/shared/ComposeDialog';
+import { ThreadsButton } from '@/components/shared/ThreadsButton';
+import { ThreadsDialog } from '@/components/shared/ThreadsDialog';
+import { PostStateButtons } from '@/components/shared/PostStateButtons';
+import { Skeleton } from '@/components/shared/Skeleton';
 import { SettingsButton } from '@/components/settings/SettingsButton';
+import { formatCount } from '@/lib/utils';
+import type { PostState } from '@/types/post';
+import type { ThreadsBlock } from '@/lib/parseThreadsPost';
 
 type SEQuestion = {
   id: number;
@@ -15,141 +22,7 @@ type SEQuestion = {
   createdAt: number;
 };
 
-type PostState = {
-  status: 'generating' | 'ready' | 'error';
-  content: string;
-  imageUrl: string | null;
-  error: string;
-};
-
-function Skeleton({ count }: { count: number }) {
-  return (
-    <div className="flex flex-col divide-y divide-divider">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="py-1.5 flex flex-col gap-1">
-          <div className="h-3 w-1/4 animate-pulse rounded bg-surface" />
-          <div className="h-4 w-full animate-pulse rounded bg-surface" />
-          <div className="h-3 w-2/3 animate-pulse rounded bg-surface" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ComposeDialog({
-  question,
-  initialContent,
-  initialImageUrl,
-  onClose,
-}: {
-  question: SEQuestion;
-  initialContent: string;
-  initialImageUrl: string | null;
-  onClose: () => void;
-}) {
-  const [content, setContent] = useState(initialContent);
-  const [posting, setPosting] = useState(false);
-  const [error, setError] = useState('');
-  const [postUrl, setPostUrl] = useState('');
-  const [imageUrl, setImageUrl] = useState<string | null>(initialImageUrl);
-  const [imageLoading, setImageLoading] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const fetchImage = useCallback((title: string) => {
-    setImageLoading(true);
-    setImageUrl(null);
-    fetch(`/api/image/find?q=${encodeURIComponent(title)}`)
-      .then((r) => r.json())
-      .then((data) => { setImageUrl(data.url ?? null); })
-      .catch(() => {})
-      .finally(() => setImageLoading(false));
-  }, []);
-
-  async function postToFacebook() {
-    setPosting(true);
-    setError('');
-    try {
-      const res = await fetch('/api/workplace/facebook', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, imageUrl }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Không đăng được lên Facebook');
-      setPostUrl(data.url ?? '');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không đăng được lên Facebook');
-    } finally {
-      setPosting(false);
-    }
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="flex w-full max-w-3xl flex-col rounded-2xl bg-panel shadow-2xl max-h-[90vh]">
-        <div className="flex items-start gap-3 p-6 pb-0">
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold text-accent">The Workplace</p>
-            <p className="line-clamp-2 text-sm font-semibold text-primary">{question.title}</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="shrink-0 text-muted hover:text-primary cursor-pointer bg-transparent border-none text-lg leading-none"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto px-6 py-4">
-          <ComposeImagePreview
-            imageUrl={imageUrl}
-            imageLoading={imageLoading}
-            onRefresh={() => fetchImage(question.title)}
-          />
-          <textarea
-            ref={textareaRef}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            style={{ fieldSizing: 'content' } as any}
-            className="w-full resize-none min-h-[200px] rounded-xl border border-divider bg-surface p-3 text-sm text-primary outline-none focus:border-accent"
-          />
-        </div>
-
-        <div className="flex flex-col gap-2 p-6 pt-0">
-          {error && <p className="text-xs text-fall">{error}</p>}
-          {postUrl && (
-            <a href={postUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-accent hover:underline">
-              Đã đăng lên Facebook →
-            </a>
-          )}
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={onClose}
-              className="rounded-lg border border-divider px-3 py-1.5 text-xs font-semibold text-muted hover:text-primary cursor-pointer bg-transparent"
-            >
-              Đóng
-            </button>
-            <button
-              onClick={postToFacebook}
-              disabled={posting || !content}
-              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-50 cursor-pointer"
-            >
-              {posting ? 'Đang đăng...' : 'Đăng Facebook'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function formatCount(n: number) {
-  return new Intl.NumberFormat('en-US', { notation: n >= 1000 ? 'compact' : 'standard' }).format(n);
-}
+type ThreadsEntry = { status: 'loading' | 'ready' | 'error'; blocks?: ThreadsBlock[] };
 
 const SELECT_CLS = 'text-xs text-muted outline-none bg-transparent border-none cursor-pointer appearance-none underline underline-offset-2';
 
@@ -160,48 +33,45 @@ export function WorkplaceHotList() {
   const [limit, setLimit] = useState(10);
   const [postStates, setPostStates] = useState<Record<number, PostState>>({});
   const [viewing, setViewing] = useState<SEQuestion | null>(null);
+  const [threadsStates, setThreadsStates] = useState<Record<number, ThreadsEntry>>({});
+  const [viewingThreads, setViewingThreads] = useState<SEQuestion | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
-
-    fetch(`/api/workplace/hot?sort=${sort}&limit=${limit}`, { cache: 'no-store' })
+    fetch(`/api/workplace/hot?sort=${sort}&limit=${limit}`, { cache: 'no-store', signal: controller.signal })
       .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        setQuestions(data.questions ?? []);
-        setLoading(false);
-      })
-      .catch(() => { if (!cancelled) setLoading(false); });
-
-    return () => { cancelled = true; };
+      .then((data) => { setQuestions(data.questions ?? []); setLoading(false); })
+      .catch((e) => { if (e.name !== 'AbortError') setLoading(false); });
+    return () => controller.abort();
   }, [sort, limit]);
 
   async function startGeneration(question: SEQuestion) {
     const id = question.id;
     setPostStates((prev) => ({ ...prev, [id]: { status: 'generating', content: '', imageUrl: null, error: '' } }));
-
     try {
       const [composeRes, imageRes] = await Promise.all([
-        fetch('/api/workplace/compose', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ questionId: id, title: question.title }),
-        }).then((r) => r.json()),
+        fetch('/api/workplace/compose', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ questionId: id, title: question.title }) }).then((r) => r.json()),
         fetch(`/api/image/find?q=${encodeURIComponent(question.title)}`).then((r) => r.json()),
       ]);
-
       if (composeRes.error) throw new Error(composeRes.error);
-
-      setPostStates((prev) => ({
-        ...prev,
-        [id]: { status: 'ready', content: composeRes.content ?? '', imageUrl: imageRes.url ?? null, error: '' },
-      }));
+      setPostStates((prev) => ({ ...prev, [id]: { status: 'ready', content: composeRes.content ?? '', imageUrl: imageRes.url ?? null, error: '' } }));
     } catch (err) {
-      setPostStates((prev) => ({
-        ...prev,
-        [id]: { status: 'error', content: '', imageUrl: null, error: err instanceof Error ? err.message : 'Lỗi' },
-      }));
+      setPostStates((prev) => ({ ...prev, [id]: { status: 'error', content: '', imageUrl: null, error: err instanceof Error ? err.message : 'Lỗi' } }));
+    }
+  }
+
+  async function startThreads(question: SEQuestion) {
+    const id = question.id;
+    setThreadsStates((prev) => ({ ...prev, [id]: { status: 'loading' } }));
+    try {
+      const res = await fetch('/api/workplace/threads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ questionId: id, title: question.title }) });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setThreadsStates((prev) => ({ ...prev, [id]: { status: 'ready', blocks: data.blocks } }));
+      setViewingThreads(question);
+    } catch {
+      setThreadsStates((prev) => ({ ...prev, [id]: { status: 'error' } }));
     }
   }
 
@@ -232,46 +102,27 @@ export function WorkplaceHotList() {
           <div className="flex flex-col divide-y divide-divider">
             {questions.map((q) => {
               const ps = postStates[q.id];
+              const ts = threadsStates[q.id];
               return (
                 <div key={q.id} className="py-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] text-muted whitespace-nowrap">
                       ▲ {formatCount(q.score)} · 💬 {q.answerCount}
                     </span>
-                    {!ps && (
-                      <button
-                        onClick={() => startGeneration(q)}
-                        className="ml-auto shrink-0 rounded-lg bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent hover:bg-accent/20 transition-colors cursor-pointer"
-                      >
-                        Tạo bài viết
-                      </button>
-                    )}
-                    {ps?.status === 'generating' && (
-                      <span className="ml-auto shrink-0 text-[11px] text-muted">Đang tạo...</span>
-                    )}
-                    {ps?.status === 'ready' && (
-                      <button
-                        onClick={() => setViewing(q)}
-                        className="ml-auto shrink-0 rounded-lg bg-accent px-2 py-0.5 text-[11px] font-semibold text-black hover:opacity-90 transition-opacity cursor-pointer"
-                      >
-                        Xem bài viết
-                      </button>
-                    )}
-                    {ps?.status === 'error' && (
-                      <button
-                        onClick={() => startGeneration(q)}
-                        className="ml-auto shrink-0 rounded-lg bg-fall/10 px-2 py-0.5 text-[11px] font-semibold text-fall hover:bg-fall/20 transition-colors cursor-pointer"
-                      >
-                        Thử lại
-                      </button>
-                    )}
+                    <div className="ml-auto flex items-center gap-1 shrink-0">
+                      <ThreadsButton
+                        status={ts?.status ?? 'none'}
+                        onGenerate={() => startThreads(q)}
+                        onView={() => setViewingThreads(q)}
+                      />
+                      <PostStateButtons
+                        state={ps?.status ?? 'none'}
+                        onGenerate={() => startGeneration(q)}
+                        onView={() => setViewing(q)}
+                      />
+                    </div>
                   </div>
-                  <a
-                    href={q.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="truncate text-sm font-semibold text-primary hover:underline block"
-                  >
+                  <a href={q.url} target="_blank" rel="noreferrer" className="truncate text-sm font-semibold text-primary hover:underline block">
                     {q.title}
                   </a>
                   {q.tags.length > 0 && (
@@ -290,10 +141,21 @@ export function WorkplaceHotList() {
 
       {viewing && viewingState?.status === 'ready' && (
         <ComposeDialog
-          question={viewing}
+          sourceLabel="The Workplace"
+          title={viewing.title}
+          facebookEndpoint="/api/workplace/facebook"
           initialContent={viewingState.content}
           initialImageUrl={viewingState.imageUrl}
+          mainCreatedAt={viewing.createdAt}
           onClose={() => setViewing(null)}
+        />
+      )}
+
+      {viewingThreads && threadsStates[viewingThreads.id]?.status === 'ready' && (
+        <ThreadsDialog
+          blocks={threadsStates[viewingThreads.id].blocks!}
+          title={viewingThreads.title}
+          onClose={() => setViewingThreads(null)}
         />
       )}
     </>
