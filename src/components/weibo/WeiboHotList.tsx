@@ -71,7 +71,7 @@ export function WeiboHotList() {
   return (
     <>
     <div className="card h-full">
-      <div className="section-label">
+      <div className="section-label" lang="zh-CN">
         微博热搜
         <button
           onClick={() => setShowSettings(true)}
@@ -100,7 +100,7 @@ export function WeiboHotList() {
       )}
 
       {!loading && !error && (
-        <div className="flex flex-col divide-y divide-divider">
+        <div className="flex flex-col divide-y divide-divider" lang="zh-CN">
           {topics.slice(0, limit).map((topic) => (
             <div key={topic.rank} className="flex items-center gap-2 py-1">
               <span className={`w-5 shrink-0 text-center text-[11px] font-bold ${topic.rank <= 3 ? 'text-fall' : 'text-muted'}`}>

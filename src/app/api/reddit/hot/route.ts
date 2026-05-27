@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getHotPosts } from '@/lib/reddit';
 
-const ALLOWED_SUBREDDITS = ['antiwork', 'AskReddit', 'confession', 'AmItheAsshole', 'tifu', 'relationship_advice', 'personalfinance', 'legaladvice', 'raisedbynarcissists', 'JUSTNOMIL', 'travel'] as const;
+const SUBREDDIT_RE = /^[A-Za-z0-9_]{2,21}$/;
 
 export async function GET(req: NextRequest) {
   const subreddit = req.nextUrl.searchParams.get('subreddit') ?? 'AskReddit';
 
-  if (!ALLOWED_SUBREDDITS.includes(subreddit as (typeof ALLOWED_SUBREDDITS)[number])) {
+  if (!SUBREDDIT_RE.test(subreddit)) {
     return NextResponse.json(
-      { error: 'Subreddit not allowed' },
+      { error: 'Invalid subreddit' },
       { status: 400 },
     );
   }

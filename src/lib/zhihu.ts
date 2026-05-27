@@ -2,7 +2,7 @@ import { withCache } from '@/lib/cache';
 import { stripHtml } from '@/lib/utils';
 import { getSetting } from '@/lib/db';
 
-export const ZHIHU_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+export const ZHIHU_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36';
 
 function zhihuHeaders(extra?: Record<string, string>) {
   const cookie = getSetting('ZHIHU_COOKIE');
@@ -10,6 +10,26 @@ function zhihuHeaders(extra?: Record<string, string>) {
     'User-Agent': ZHIHU_USER_AGENT,
     ...(cookie ? { 'Cookie': cookie } : {}),
     ...extra,
+  };
+}
+
+function zhihuTopicHeaders(topicId: string) {
+  const cookie = getSetting('ZHIHU_TOPIC_COOKIE') || getSetting('ZHIHU_COOKIE');
+  const zse93 = getSetting('ZHIHU_TOPIC_X_ZSE_93');
+  const zse96 = getSetting('ZHIHU_TOPIC_X_ZSE_96');
+
+  return {
+    'User-Agent': ZHIHU_USER_AGENT,
+    'Accept': '*/*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': `https://www.zhihu.com/topic/${topicId}/hot`,
+    'X-Requested-With': 'fetch',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-origin',
+    ...(cookie ? { 'Cookie': cookie } : {}),
+    ...(zse93 ? { 'x-zse-93': zse93 } : {}),
+    ...(zse96 ? { 'x-zse-96': zse96 } : {}),
   };
 }
 
@@ -22,37 +42,93 @@ export type ZhihuQuestion = {
   url: string;
 };
 
-export async function getZhihuTravelQuestions(limit = 10): Promise<ZhihuQuestion[]> {
-  return withCache(`zhihu_travel_${limit}`, 60 * 60 * 1000, async () => {
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null;
+}
+
+function findQuestionCandidate(value: unknown): UnknownRecord | null {
+  if (!isRecord(value)) return null;
+
+  const id = value.id;
+  const title = value.title;
+  const type = value.type;
+  if ((typeof id === 'number' || typeof id === 'string') && typeof title === 'string' && (!type || type === 'question')) {
+    return value;
+  }
+
+  for (const key of ['question', 'target', 'object', 'answer', 'article']) {
+    const found = findQuestionCandidate(value[key]);
+    if (found) return found;
+  }
+
+  return null;
+}
+
+function textValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === 'number' ? value : 0;
+}
+
+function mapTopicFeedItem(item: unknown): ZhihuQuestion | null {
+  const question = findQuestionCandidate(item);
+  if (!question) return null;
+
+  const id = String(question.id);
+  const wrapper = isRecord(item) ? item : {};
+  const target = isRecord(wrapper.target) ? wrapper.target : {};
+  const answer = isRecord(target.answer) ? target.answer : isRecord(wrapper.answer) ? wrapper.answer : {};
+  const voteupCount = numberValue(answer.voteup_count || target.voteup_count || wrapper.voteup_count);
+  const heat = textValue(wrapper.detail_text)
+    || (voteupCount ? `${voteupCount} \u8d5e\u540c` : '');
+
+  return {
+    id,
+    title: textValue(question.title),
+    excerpt: textValue(question.excerpt),
+    answerCount: numberValue(question.answer_count),
+    heat,
+    url: `https://www.zhihu.com/question/${id}`,
+  };
+}
+
+export async function getZhihuTopicQuestions(topicId: string, limit = 10): Promise<ZhihuQuestion[]> {
+  return withCache(`zhihu_topic_v5_essence_v2_${topicId}_${limit}`, 60 * 60 * 1000, async () => {
     const res = await fetch(
-      `https://www.zhihu.com/api/v4/topics/19553092/feeds/top_activity?limit=${limit}&after_id=0`,
-      { headers: zhihuHeaders({ 'Referer': 'https://www.zhihu.com/topic/19553092/hot' }) },
+      `https://www.zhihu.com/api/v5.1/topics/${encodeURIComponent(topicId)}/feeds/essence/v2`,
+      {
+        headers: zhihuTopicHeaders(topicId),
+        signal: AbortSignal.timeout(10_000),
+      },
     );
 
     if (!res.ok) {
-      if (res.status === 403) return getZhihuHotQuestions(limit);
-      throw new Error(`Zhihu API error: ${res.status}`);
+      const body = await res.text().catch(() => '');
+      throw new Error(`Zhihu API error: ${res.status}${body ? ` ${body.slice(0, 160)}` : ''}`);
     }
 
-    const data = await res.json() as {
-      data: Array<{
-        target: { id: number; title: string; excerpt?: string; answer_count?: number; type: string };
-        detail_text?: string;
-      }>;
-    };
+    const data = await res.json() as { data?: unknown[] };
 
-    return data.data
-      .filter((item) => item.target.type === 'question')
-      .slice(0, limit)
-      .map((item) => ({
-        id: String(item.target.id),
-        title: item.target.title,
-        excerpt: item.target.excerpt ?? '',
-        answerCount: item.target.answer_count ?? 0,
-        heat: item.detail_text ?? '',
-        url: `https://www.zhihu.com/question/${item.target.id}`,
-      }));
+    const seen = new Set<string>();
+    const questions = (data.data ?? [])
+      .map(mapTopicFeedItem)
+      .filter((item): item is ZhihuQuestion => Boolean(item))
+      .filter((item) => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      });
+
+    return questions.slice(0, limit);
   });
+}
+
+export async function getZhihuTravelQuestions(limit = 10): Promise<ZhihuQuestion[]> {
+  return getZhihuTopicQuestions('19553092', limit);
 }
 
 export async function getZhihuHotQuestions(limit = 10): Promise<ZhihuQuestion[]> {
@@ -96,6 +172,16 @@ export async function getZhihuHotQuestions(limit = 10): Promise<ZhihuQuestion[]>
 
 export type ZhihuAnswer = { author: string; score: number; content: string; createdAt: number };
 
+const MEDIA_EMBED_RE = /!\[[^\]]*\]\([^)]*\)|<img\b|<figure\b|data-actualsrc=/i;
+
+function hasMediaEmbed(text: string): boolean {
+  return MEDIA_EMBED_RE.test(text);
+}
+
+function normalizeAnswerContent(html: string): string {
+  return stripHtml(html).replace(/\n{3,}/g, '\n\n').trim();
+}
+
 export async function getZhihuAnswers(questionId: string): Promise<{
   questionAuthor: string;
   questionCreatedAt?: number;
@@ -127,11 +213,14 @@ export async function getZhihuAnswers(questionId: string): Promise<{
   return {
     questionAuthor: qData?.author?.name ?? '',
     questionCreatedAt: qData?.created,
-    answers: aData.data.map((a) => ({
-      author: a.author.name,
-      score: a.voteup_count,
-      content: stripHtml(a.content ?? ''),
-      createdAt: a.created_time,
-    })),
+    answers: aData.data
+      .filter((a) => !hasMediaEmbed(a.content ?? ''))
+      .map((a) => ({
+        author: a.author.name,
+        score: a.voteup_count,
+        content: normalizeAnswerContent(a.content ?? ''),
+        createdAt: a.created_time,
+      }))
+      .filter((a) => a.content),
   };
 }

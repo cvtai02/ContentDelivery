@@ -12,12 +12,13 @@ type Props = {
   blocks: PostBlock[];
   title: string;
   sourceLabel: string;
+  contentLang?: string;
   onClose: () => void;
 };
 
 type PostResult = { ok: true; url: string } | { ok: false; message: string } | null;
 
-export function PostDialog({ blocks: initialBlocks, title, sourceLabel, onClose }: Props) {
+export function PostDialog({ blocks: initialBlocks, title, sourceLabel, contentLang, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('threads');
   const [editedBlocks, setEditedBlocks] = useState<PostBlock[]>(initialBlocks);
   const [posting, setPosting] = useState(false);
@@ -93,7 +94,7 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, onClose 
       <div className="flex w-[540px] max-w-[95vw] flex-col rounded-2xl bg-panel shadow-2xl max-h-[90vh]">
 
         {/* Header */}
-        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-divider shrink-0">
+        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-divider shrink-0" lang={contentLang}>
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-semibold text-accent">{sourceLabel}</p>
             <p className="line-clamp-1 text-xs text-muted">{title}</p>
@@ -110,7 +111,7 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, onClose 
         </div>
 
         {/* Body */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-4">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4" lang={contentLang}>
 
           {/* ThreadsPreview: always mounted offscreen to keep groupRefs valid for image capture */}
           <div style={tab !== 'threads' ? { position: 'fixed', left: -9999, top: -9999, pointerEvents: 'none' } : {}}>

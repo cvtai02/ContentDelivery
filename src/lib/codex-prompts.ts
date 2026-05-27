@@ -1,19 +1,53 @@
 import { getPromptTemplate, setPromptTemplate, deletePromptTemplate } from '@/lib/db';
 
-export type PromptKey = 'reddit' | 'workplace' | 'zhihu' | 'audio';
+export type PromptKey = 'reddit' | 'zhihuVietnamese' | 'audio';
 
 export const DEFAULT_PROMPTS: Record<PromptKey, string> = {
-  reddit: `Translate all string values in the following JSON to Vietnamese. Return ONLY valid JSON — exact same structure and keys, only the string values translated. Do not add markdown, do not wrap in code blocks.\n\n{{content}}`,
+  reddit: `You are translating a Reddit post payload for /api/reddit/vietnamese.
 
-  workplace: `Translate the following Workplace Stack Exchange question and answers to Vietnamese. Keep the exact format and structure. Only translate the text content — do not add, remove, or rewrite anything. Do NOT translate or modify header lines (e.g. "1. AuthorName - 123 likes. [ts:1234567890]" must stay exactly as-is). Do NOT remove or change any [ts:...] markers.\n\n{{content}}`,
+Input is JSON with this shape:
+{
+  "title": string,
+  "body": string,
+  "comments": [
+    {
+      "text": string,
+      "replies": string[]
+    }
+  ]
+}
 
-  zhihu: `Translate the following Zhihu question and answers to Vietnamese. Keep the exact format and structure. Only translate the text content — do not add, remove, or rewrite anything. Do NOT translate or modify header lines (e.g. "1. AuthorName - 123 likes. [ts:1234567890]" must stay exactly as-is). Do NOT remove or change any [ts:...] markers.\n\n{{content}}`,
+Translate every string value into natural Vietnamese for Vietnamese readers.
+Return ONLY valid JSON with the exact same keys, nesting, array lengths, and order.
+Do not add markdown, code fences, explanations, metadata, or extra fields.
+Preserve empty strings as empty strings.
+Preserve URLs, usernames, subreddit names, code snippets, and markdown/link targets when present.
+Keep the original meaning and tone; do not summarize, censor, rewrite, or add opinions.
+
+{{content}}`,
+
+  zhihuVietnamese: `You are translating a Zhihu question payload for /api/zhihu/vietnamese.
+
+Input is JSON with this shape:
+{
+  "title": string,
+  "answers": string[]
+}
+
+Translate every string value into natural Vietnamese for Vietnamese readers.
+Return ONLY valid JSON with the exact same keys, nesting, array lengths, and order.
+Do not add markdown, code fences, explanations, metadata, or extra fields.
+Preserve empty strings as empty strings.
+Preserve URLs, usernames, code snippets, and markdown/link targets when present.
+Keep the original meaning and tone; do not summarize, censor, rewrite, or add opinions.
+
+{{content}}`,
 
   audio: `Chuyển bài viết sau thành script đọc audio (podcast/voiceover) bằng tiếng Việt. Yêu cầu:\n- Viết theo thể nói, tự nhiên khi đọc thành tiếng\n- Bỏ các ký hiệu khó đọc (bullet, số thứ tự, dấu gạch ngang đầu dòng)\n- Giữ nguyên nội dung, không thêm không bớt thông tin\n- Dùng từ nối tự nhiên giữa các đoạn\n- Không thêm lời mở đầu hay kết thúc của chính mình\n\nBài viết:\n{{content}}`,
 };
 
 export function getPrompts(): Record<PromptKey, string> {
-  const keys: PromptKey[] = ['reddit', 'workplace', 'zhihu', 'audio'];
+  const keys: PromptKey[] = ['reddit', 'zhihuVietnamese', 'audio'];
   return Object.fromEntries(
     keys.map((k) => [k, getPromptTemplate(k) ?? DEFAULT_PROMPTS[k]]),
   ) as Record<PromptKey, string>;

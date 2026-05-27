@@ -2,12 +2,32 @@
 
 type Status = 'none' | 'loading' | 'ready' | 'error';
 
-type Props = { status: Status; onGenerate: () => void; onView: () => void; onRefresh?: () => void };
+type Props = {
+  status: Status;
+  onGenerate: () => void;
+  onView: () => void;
+  onRefresh?: () => void;
+  onCancel?: () => void;
+};
 
-export function VietnameseButton({ status, onGenerate, onView, onRefresh }: Props) {
+export function VietnameseButton({ status, onGenerate, onView, onRefresh, onCancel }: Props) {
   if (status === 'loading') {
-    return <span className="shrink-0 text-[11px] text-muted">Đang dịch...</span>;
+    return (
+      <span className="shrink-0 inline-flex items-center gap-1">
+        <span className="text-[11px] text-muted">translating...</span>
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            title="Cancel translation"
+            className="rounded-md border border-fall/30 bg-fall/10 px-1.5 py-0.5 text-[11px] font-semibold text-fall hover:bg-fall/20 transition-colors cursor-pointer"
+          >
+            cancel
+          </button>
+        )}
+      </span>
+    );
   }
+
   if (status === 'ready') {
     return (
       <span className="shrink-0 inline-flex items-center gap-0.5">
@@ -23,12 +43,13 @@ export function VietnameseButton({ status, onGenerate, onView, onRefresh }: Prop
             title="Re-translate (bypass cache)"
             className="rounded-md bg-surface border border-divider px-1.5 py-0.5 text-[11px] text-muted hover:text-primary transition-colors cursor-pointer"
           >
-            ↺
+            retry
           </button>
         )}
       </span>
     );
   }
+
   if (status === 'error') {
     return (
       <button
@@ -39,6 +60,7 @@ export function VietnameseButton({ status, onGenerate, onView, onRefresh }: Prop
       </button>
     );
   }
+
   return (
     <button
       onClick={onGenerate}

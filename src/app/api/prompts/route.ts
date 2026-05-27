@@ -11,7 +11,7 @@ export function GET() {
 
 export async function POST(req: NextRequest) {
   const { key, template } = await req.json() as { key: PromptKey; template: string | null };
-  const valid: PromptKey[] = ['reddit', 'workplace', 'zhihu', 'audio'];
+  const valid: PromptKey[] = ['reddit', 'zhihuVietnamese', 'audio'];
   if (!valid.includes(key)) {
     return NextResponse.json({ error: 'Invalid key' }, { status: 400 });
   }
