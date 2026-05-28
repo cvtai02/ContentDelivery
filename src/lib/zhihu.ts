@@ -172,7 +172,10 @@ export async function getZhihuHotQuestions(limit = 10): Promise<ZhihuQuestion[]>
 
 export type ZhihuAnswer = { author: string; score: number; content: string; createdAt: number };
 
+const MAX_ZHIHU_ANSWER_LENGTH = 200;
+const MIN_ZHIHU_ANSWER_SCORE = 80;
 const MEDIA_EMBED_RE = /!\[[^\]]*\]\([^)]*\)|<img\b|<figure\b|data-actualsrc=/i;
+const SPAM_RE = /(https?:\/\/|www\.|t\.me|telegram|whatsapp|wechat|weixin|微信|加微|vx[:：]?|qq[:：]?\d|邮箱|email|私信|联系|扫码|二维码)/i;
 
 function hasMediaEmbed(text: string): boolean {
   return MEDIA_EMBED_RE.test(text);
@@ -180,6 +183,17 @@ function hasMediaEmbed(text: string): boolean {
 
 function normalizeAnswerContent(html: string): string {
   return stripHtml(html).replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function isUsefulShortAnswer(answer: { voteup_count: number; content: string }): boolean {
+  if (answer.voteup_count < MIN_ZHIHU_ANSWER_SCORE) return false;
+  if (hasMediaEmbed(answer.content)) return false;
+
+  const content = normalizeAnswerContent(answer.content);
+  if (!content || content.length >= MAX_ZHIHU_ANSWER_LENGTH) return false;
+  if (SPAM_RE.test(content)) return false;
+
+  return true;
 }
 
 export async function getZhihuAnswers(questionId: string): Promise<{
@@ -214,7 +228,7 @@ export async function getZhihuAnswers(questionId: string): Promise<{
     questionAuthor: qData?.author?.name ?? '',
     questionCreatedAt: qData?.created,
     answers: aData.data
-      .filter((a) => !hasMediaEmbed(a.content ?? ''))
+      .filter((a) => isUsefulShortAnswer({ voteup_count: a.voteup_count, content: a.content ?? '' }))
       .map((a) => ({
         author: a.author.name,
         score: a.voteup_count,

@@ -1,3 +1,8 @@
+export enum PostLanguage {
+  Vietnamese = 'Vietnamese',
+  English = 'English',
+}
+
 export type PostStatus = 'none' | 'generating' | 'ready' | 'error';
 
 export type PostState = {

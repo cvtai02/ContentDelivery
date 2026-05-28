@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PostDialog } from '@/components/shared/PostDialog';
+import { PostLanguage } from '@/types/post';
 import { OriginThreadsButton } from '@/components/shared/OriginThreadsButton';
 import { VietnameseButton } from '@/components/shared/VietnameseButton';
 import { Skeleton } from '@/components/shared/Skeleton';
@@ -412,6 +413,7 @@ export function RedditHotList() {
           blocks={originStates[viewingOrigin.id].blocks!}
           title={viewingOrigin.title}
           sourceLabel={`r/${viewingOrigin.subreddit ?? 'reddit'} · origin`}
+          postLanguage={PostLanguage.English}
           onClose={() => setViewingOrigin(null)}
         />
       )}
@@ -421,6 +423,7 @@ export function RedditHotList() {
           blocks={viStates[viewingVi.id].blocks!}
           title={viewingVi.title}
           sourceLabel={`r/${viewingVi.subreddit ?? 'reddit'} · vietnamese`}
+          postLanguage={PostLanguage.Vietnamese}
           onClose={() => setViewingVi(null)}
         />
       )}

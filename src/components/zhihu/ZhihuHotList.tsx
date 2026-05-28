@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PostDialog } from '@/components/shared/PostDialog';
+import { PostLanguage } from '@/types/post';
 import { OriginThreadsButton } from '@/components/shared/OriginThreadsButton';
 import { VietnameseButton } from '@/components/shared/VietnameseButton';
 import { Skeleton } from '@/components/shared/Skeleton';
@@ -388,6 +389,7 @@ export function ZhihuHotList() {
           blocks={originStates[viewingOrigin.id].blocks!}
           title={viewingOrigin.title}
           sourceLabel="Zhihu topics"
+          postLanguage={PostLanguage.English}
           contentLang="zh-CN"
           onClose={() => setViewingOrigin(null)}
         />
@@ -398,6 +400,7 @@ export function ZhihuHotList() {
           blocks={viStates[viewingVi.id].blocks!}
           title={viewingVi.title}
           sourceLabel="Zhihu topics - vietnamese"
+          postLanguage={PostLanguage.Vietnamese}
           onClose={() => setViewingVi(null)}
         />
       )}

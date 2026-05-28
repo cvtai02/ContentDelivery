@@ -5,6 +5,7 @@ import { ThreadsPreview } from '@/components/shared/ThreadsPreview';
 import { FacebookIcon } from '@/components/shared/FacebookIcon';
 import { formatFacebookPostFromBlocks } from '@/lib/reddit-format';
 import type { PostBlock } from '@/lib/parseThreadsPost';
+import { PostLanguage } from '@/types/post';
 
 type Tab = 'threads' | 'facebook' | 'edit' | 'image';
 
@@ -12,13 +13,14 @@ type Props = {
   blocks: PostBlock[];
   title: string;
   sourceLabel: string;
+  postLanguage: PostLanguage;
   contentLang?: string;
   onClose: () => void;
 };
 
 type PostResult = { ok: true; url: string } | { ok: false; message: string } | null;
 
-export function PostDialog({ blocks: initialBlocks, title, sourceLabel, contentLang, onClose }: Props) {
+export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLanguage, contentLang, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('threads');
   const [editedBlocks, setEditedBlocks] = useState<PostBlock[]>(initialBlocks);
   const [posting, setPosting] = useState(false);
@@ -35,6 +37,10 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, contentL
 
   function updateBlockText(idx: number, text: string) {
     setEditedBlocks((prev) => prev.map((b, i) => i === idx ? { ...b, text } : b));
+  }
+
+  function deleteBlock(idx: number) {
+    setEditedBlocks((prev) => prev.filter((_, i) => i !== idx));
   }
 
   const captureImages = useCallback(async () => {
@@ -96,7 +102,16 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, contentL
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-2.5 border-b border-divider shrink-0" lang={contentLang}>
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-semibold text-accent">{sourceLabel}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-[10px] font-semibold text-accent">{sourceLabel}</p>
+              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                postLanguage === PostLanguage.Vietnamese
+                  ? 'bg-[#DA251D]/15 text-[#DA251D]'
+                  : 'bg-blue-500/15 text-blue-500'
+              }`}>
+                {postLanguage === PostLanguage.Vietnamese ? '🇻🇳 VI' : '🇬🇧 EN'}
+              </span>
+            </div>
             <p className="line-clamp-1 text-xs text-muted">{title}</p>
           </div>
           <div className="flex items-center gap-0.5 shrink-0">
@@ -146,7 +161,15 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, contentL
                 const label = b.isMain ? 'Bài viết' : b.isReply ? '↳ Trả lời' : 'Bình luận';
                 return (
                   <div key={i} className="flex flex-col gap-1">
-                    <span className="text-[10px] font-semibold text-muted uppercase tracking-wide">{label}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold text-muted uppercase tracking-wide">{label}</span>
+                      <button
+                        onClick={() => deleteBlock(i)}
+                        className="text-[10px] font-semibold text-fall hover:opacity-70 cursor-pointer bg-transparent border-0 px-0 py-0"
+                      >
+                        ✕ Delete
+                      </button>
+                    </div>
                     <textarea
                       value={b.text}
                       onChange={(e) => updateBlockText(i, e.target.value)}
