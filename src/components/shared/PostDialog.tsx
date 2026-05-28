@@ -7,7 +7,14 @@ import { formatFacebookPostFromBlocks } from '@/lib/reddit-format';
 import type { PostBlock } from '@/lib/parseThreadsPost';
 import { PostLanguage } from '@/types/post';
 
-type Tab = 'threads' | 'facebook' | 'edit' | 'image';
+type Tab = 'threads' | 'facebook' | 'edit' | 'image' | 'video';
+
+type VideoState =
+  | { phase: 'idle' }
+  | { phase: 'capturing' }
+  | { phase: 'rendering'; jobId: string }
+  | { phase: 'completed'; jobId: string; videoPath: string }
+  | { phase: 'failed'; error: string };
 
 type Props = {
   blocks: PostBlock[];
@@ -27,6 +34,7 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
   const [postResult, setPostResult] = useState<PostResult>(null);
   const [capturedImages, setCapturedImages] = useState<string[]>([]);
   const [capturing, setCapturing] = useState(false);
+  const [videoState, setVideoState] = useState<VideoState>({ phase: 'idle' });
   const groupRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const fbContent = formatFacebookPostFromBlocks(editedBlocks);
@@ -43,7 +51,7 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
     setEditedBlocks((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  const captureImages = useCallback(async () => {
+  const captureImages = useCallback(async (): Promise<string[]> => {
     setCapturing(true);
     setCapturedImages([]);
     try {
@@ -55,10 +63,70 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
         results.push(dataUrl);
       }
       setCapturedImages(results);
+      return results;
     } finally {
       setCapturing(false);
     }
   }, []);
+
+  function getAudioScripts(blocks: PostBlock[]): string[] {
+    const groups: { main: PostBlock; replies: PostBlock[] }[] = [];
+    for (const b of blocks) {
+      if (b.isReply && groups.length > 0) {
+        groups[groups.length - 1].replies.push(b);
+      } else {
+        groups.push({ main: b, replies: [] });
+      }
+    }
+    return groups.map((g) => [g.main, ...g.replies].map((b) => b.text).join('\n'));
+  }
+
+  function dataUrlToFile(dataUrl: string, filename: string): File {
+    const [header, data] = dataUrl.split(',');
+    const mime = header.match(/:(.*?);/)?.[1] ?? 'image/png';
+    const bytes = atob(data);
+    const arr = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+    return new File([arr], filename, { type: mime });
+  }
+
+  async function renderVideo() {
+    setVideoState({ phase: 'capturing' });
+    let images = capturedImages;
+    if (images.length === 0) {
+      images = await captureImages();
+    }
+    if (images.length === 0) {
+      setVideoState({ phase: 'failed', error: 'No images to render' });
+      return;
+    }
+    try {
+      const audioScripts = getAudioScripts(editedBlocks);
+      const form = new FormData();
+      form.append('videoTitle', title);
+      images.forEach((dataUrl, i) => {
+        form.append('images', dataUrlToFile(dataUrl, `scene-${i + 1}.png`));
+      });
+      audioScripts.forEach((script) => form.append('audioScripts', script));
+
+      const res = await fetch('http://localhost:8010/api/zhihugen/render/upload', { method: 'POST', body: form });
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const { jobId } = await res.json() as { jobId: string };
+
+      setVideoState({ phase: 'rendering', jobId });
+
+      const waitRes = await fetch(`http://localhost:8010/api/zhihugen/jobs/${jobId}/wait`);
+      const result = await waitRes.json() as { status: string; outputVideoPath?: string; error?: string };
+
+      if (result.status === 'completed' && result.outputVideoPath) {
+        setVideoState({ phase: 'completed', jobId, videoPath: result.outputVideoPath });
+      } else {
+        setVideoState({ phase: 'failed', error: result.error ?? 'Job failed' });
+      }
+    } catch (err) {
+      setVideoState({ phase: 'failed', error: err instanceof Error ? err.message : 'Unknown error' });
+    }
+  }
 
   useEffect(() => {
     if (tab === 'image') captureImages();
@@ -119,6 +187,7 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
             <button onClick={() => setTab('facebook')} className={tabCls('facebook')}>Facebook</button>
             <button onClick={() => setTab('edit')} className={tabCls('edit')}>Edit</button>
             <button onClick={() => setTab('image')} className={tabCls('image')}>Images</button>
+            <button onClick={() => setTab('video')} className={tabCls('video')}>Video</button>
           </div>
           <button onClick={onClose} className="shrink-0 text-muted hover:text-primary cursor-pointer bg-transparent border-0 text-lg leading-none ml-1">
             ✕
@@ -179,6 +248,70 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {tab === 'video' && (
+            <div className="flex flex-col gap-4">
+              {videoState.phase === 'idle' && (
+                <div className="flex flex-col items-center gap-3 py-6 text-center">
+                  <p className="text-xs text-muted">Captures all thread images and sends them to Zhihugen to render a video.</p>
+                  <button
+                    onClick={renderVideo}
+                    className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-white hover:opacity-90 cursor-pointer transition-opacity"
+                  >
+                    ▶ Render Video
+                  </button>
+                </div>
+              )}
+
+              {(videoState.phase === 'capturing') && (
+                <div className="flex flex-col items-center gap-2 py-6 text-center">
+                  <div className="h-4 w-4 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                  <p className="text-xs text-muted">Capturing images…</p>
+                </div>
+              )}
+
+              {videoState.phase === 'rendering' && (
+                <div className="flex flex-col items-center gap-2 py-6 text-center">
+                  <div className="h-4 w-4 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                  <p className="text-xs text-muted">Rendering video…</p>
+                  <p className="text-[10px] font-mono text-muted/60">{videoState.jobId}</p>
+                </div>
+              )}
+
+              {videoState.phase === 'completed' && (
+                <div className="flex flex-col gap-3">
+                  <div className="rounded-xl border border-divider bg-surface p-4 flex flex-col gap-2">
+                    <p className="text-[10px] font-semibold text-accent uppercase tracking-wide">Video ready</p>
+                    <p className="break-all text-[12px] font-mono text-primary select-all">{videoState.videoPath}</p>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(videoState.videoPath)}
+                      className="self-start rounded-md border border-divider bg-transparent px-2.5 py-1 text-[11px] font-semibold text-muted hover:text-primary cursor-pointer transition-colors"
+                    >
+                      Copy path
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => { setVideoState({ phase: 'idle' }); renderVideo(); }}
+                    className="self-start text-[11px] text-muted hover:text-primary cursor-pointer bg-transparent border-0"
+                  >
+                    ↺ Render again
+                  </button>
+                </div>
+              )}
+
+              {videoState.phase === 'failed' && (
+                <div className="flex flex-col items-center gap-3 py-6 text-center">
+                  <p className="text-xs text-fall">{videoState.error}</p>
+                  <button
+                    onClick={() => setVideoState({ phase: 'idle' })}
+                    className="rounded-lg border border-divider px-3 py-1.5 text-xs font-semibold text-muted hover:text-primary cursor-pointer bg-transparent"
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
