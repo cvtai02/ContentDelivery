@@ -16,6 +16,16 @@ type VideoState =
   | { phase: 'completed'; jobId: string; videoPath: string }
   | { phase: 'failed'; error: string };
 
+type SixGateJob = { id: string; destinationName: string; platform: string };
+
+type SixGateState =
+  | { phase: 'idle' }
+  | { phase: 'submitting' }
+  | { phase: 'submitted'; jobs: SixGateJob[] }
+  | { phase: 'failed'; error: string };
+
+const SIXGATE_ACCOUNT_ID = 'group_iLWxB0Zl';
+
 type Props = {
   blocks: PostBlock[];
   title: string;
@@ -35,6 +45,7 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
   const [capturedImages, setCapturedImages] = useState<string[]>([]);
   const [capturing, setCapturing] = useState(false);
   const [videoState, setVideoState] = useState<VideoState>({ phase: 'idle' });
+  const [sixGateState, setSixGateState] = useState<SixGateState>({ phase: 'idle' });
   const groupRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const fbContent = formatFacebookPostFromBlocks(editedBlocks);
@@ -120,11 +131,41 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
 
       if (result.status === 'completed' && result.outputVideoPath) {
         setVideoState({ phase: 'completed', jobId, videoPath: result.outputVideoPath });
+        postTo6Gate(result.outputVideoPath);
       } else {
         setVideoState({ phase: 'failed', error: result.error ?? 'Job failed' });
       }
     } catch (err) {
       setVideoState({ phase: 'failed', error: err instanceof Error ? err.message : 'Unknown error' });
+    }
+  }
+
+  async function postTo6Gate(videoPath: string) {
+    setSixGateState({ phase: 'submitting' });
+    try {
+      const res = await fetch(`http://localhost:20129/api/groups/${SIXGATE_ACCOUNT_ID}/upload-by-path`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoPath, title }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? `6Gate error ${res.status}`);
+      }
+      const data = await res.json() as { jobs: SixGateJob[] };
+      setSixGateState({ phase: 'submitted', jobs: data.jobs });
+    } catch (err) {
+      setSixGateState({ phase: 'failed', error: err instanceof Error ? err.message : 'Unknown error' });
+    }
+  }
+
+  function startVideoFlow() {
+    const alreadyRunning = videoState.phase === 'capturing' || videoState.phase === 'rendering';
+    setTab('video');
+    if (!alreadyRunning) {
+      setVideoState({ phase: 'idle' });
+      setSixGateState({ phase: 'idle' });
+      renderVideo();
     }
   }
 
@@ -292,8 +333,42 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
                       Copy path
                     </button>
                   </div>
+
+                  {/* 6Gate status — auto-triggered after render */}
+                  <div className="rounded-xl border border-divider bg-surface px-4 py-3 flex items-center gap-2">
+                    <p className="text-[10px] font-semibold text-muted shrink-0">6Gate</p>
+                    {sixGateState.phase === 'submitting' && (
+                      <>
+                        <div className="h-3 w-3 rounded-full border-2 border-accent border-t-transparent animate-spin shrink-0" />
+                        <span className="text-[11px] text-muted">Submitting…</span>
+                      </>
+                    )}
+                    {sixGateState.phase === 'submitted' && (
+                      <div className="flex flex-col gap-0.5 w-full">
+                        {sixGateState.jobs.map((job) => (
+                          <div key={job.id} className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-semibold text-accent uppercase">{job.platform}</span>
+                            <span className="text-[10px] text-muted truncate">{job.destinationName}</span>
+                            <span className="ml-auto text-[9px] font-mono text-muted/50 shrink-0">{job.id}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {sixGateState.phase === 'failed' && videoState.phase === 'completed' && (
+                      <>
+                        <span className="text-[11px] text-fall truncate">{sixGateState.error}</span>
+                        <button
+                          onClick={() => postTo6Gate(videoState.videoPath)}
+                          className="shrink-0 text-[11px] text-muted hover:text-primary cursor-pointer bg-transparent border-0"
+                        >
+                          Retry
+                        </button>
+                      </>
+                    )}
+                  </div>
+
                   <button
-                    onClick={() => { setVideoState({ phase: 'idle' }); renderVideo(); }}
+                    onClick={() => { setVideoState({ phase: 'idle' }); setSixGateState({ phase: 'idle' }); renderVideo(); }}
                     className="self-start text-[11px] text-muted hover:text-primary cursor-pointer bg-transparent border-0"
                   >
                     ↺ Render again
@@ -375,6 +450,13 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
               className="inline-flex items-center gap-1.5 rounded-lg bg-[#1877F2] px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-wait cursor-pointer transition-opacity"
             >
               <FacebookIcon size={12} /> {posting ? 'Đang đăng...' : 'Đăng Facebook'}
+            </button>
+            <button
+              onClick={startVideoFlow}
+              disabled={videoState.phase === 'capturing' || videoState.phase === 'rendering'}
+              className="rounded-lg border border-divider px-3 py-1.5 text-xs font-semibold text-muted hover:text-primary disabled:opacity-40 cursor-pointer bg-transparent transition-colors"
+            >
+              → Video
             </button>
           </div>
         </div>
