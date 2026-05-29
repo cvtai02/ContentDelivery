@@ -12,6 +12,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@xyflow/react": "^12.10.2",
     "better-sqlite3": "^12.10.0",
     "html-to-image": "^1.11.13",
     "next": "^15.3.1",

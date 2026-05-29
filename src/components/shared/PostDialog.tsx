@@ -1,6 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
+  Background,
+  BackgroundVariant,
+  Handle,
+  Position,
+  type Node,
+  type Edge,
+  type NodeProps,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import { ThreadsPreview } from '@/components/shared/ThreadsPreview';
 import { FacebookIcon } from '@/components/shared/FacebookIcon';
 import { formatFacebookPostFromBlocks } from '@/lib/reddit-format';
@@ -12,11 +25,18 @@ type Tab = 'threads' | 'facebook' | 'edit' | 'image' | 'video';
 type VideoState =
   | { phase: 'idle' }
   | { phase: 'capturing' }
-  | { phase: 'rendering'; jobId: string }
+  | { phase: 'rendering'; jobId: string; cancelling?: boolean }
   | { phase: 'completed'; jobId: string; videoPath: string }
   | { phase: 'failed'; error: string };
 
-type SixGateJob = { id: string; destinationName: string; platform: string };
+type SixGateJob = {
+  id: string;
+  destinationId: string;
+  destinationName: string;
+  destinationIcon: string;
+  platform: string;
+  jobDetailsLink: string;
+};
 
 type SixGateState =
   | { phase: 'idle' }
@@ -24,7 +44,457 @@ type SixGateState =
   | { phase: 'submitted'; jobs: SixGateJob[] }
   | { phase: 'failed'; error: string };
 
+type JobStatus =
+  | 'Created'
+  | 'Initializing'
+  | 'Uploading'
+  | 'Finishing'
+  | 'Processing'
+  | 'Published'
+  | 'Failed'
+  | 'Retrying'
+  | 'ReconnectRequired'
+  | 'Cancelled';
+
+type JobInfo = {
+  status: JobStatus;
+  providerPostUrl: string | null;
+  errorMessage: string | null;
+};
+
 const SIXGATE_ACCOUNT_ID = 'group_iLWxB0Zl';
+
+type NodeStatus = 'pending' | 'active' | 'success' | 'failed';
+
+function platformIcon(platform: string): string {
+  switch (platform.toLowerCase()) {
+    case 'youtube': return '▶';
+    case 'tiktok': return '🎵';
+    case 'facebook': return 'f';
+    case 'instagram': return '◇';
+    default: return '◆';
+  }
+}
+
+function PipelineNode({
+  icon,
+  label,
+  status,
+  detail,
+  compact,
+  onRetry,
+  onClick,
+  selected,
+}: {
+  icon: string;
+  label: string;
+  status: NodeStatus;
+  detail?: string;
+  compact?: boolean;
+  onRetry?: () => void;
+  onClick?: () => void;
+  selected?: boolean;
+}) {
+  const ring =
+    selected ? 'border-accent shadow-[0_0_0_2px_rgba(99,102,241,0.45)]' :
+    status === 'active' ? 'border-accent shadow-[0_0_0_3px_rgba(99,102,241,0.15)]' :
+    status === 'success' ? 'border-emerald-500/50' :
+    status === 'failed' ? 'border-fall/60' :
+    'border-divider';
+
+  const iconBg =
+    status === 'active' ? 'bg-accent/15 text-accent' :
+    status === 'success' ? 'bg-emerald-500/15 text-emerald-500' :
+    status === 'failed' ? 'bg-fall/15 text-fall' :
+    'bg-divider/40 text-muted';
+
+  return (
+    <div
+      onClick={onClick}
+      className={`flex items-center gap-2.5 rounded-xl border bg-surface ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'} ${ring} transition-colors ${onClick ? 'cursor-pointer hover:bg-surface/80' : ''}`}
+    >
+      <div className={`shrink-0 h-7 w-7 rounded-md flex items-center justify-center text-sm font-bold ${iconBg}`}>
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[12px] font-semibold text-primary leading-tight">{label}</p>
+        {detail && <p className="text-[10px] text-muted truncate leading-tight mt-0.5">{detail}</p>}
+      </div>
+      {onRetry && (status === 'success' || status === 'failed') && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRetry(); }}
+          title="Re-run this step"
+          className="shrink-0 h-5 w-5 rounded-md flex items-center justify-center text-[11px] text-muted hover:text-primary hover:bg-divider/40 cursor-pointer bg-transparent border-0 transition-colors"
+        >
+          ↺
+        </button>
+      )}
+      <StatusDot status={status} />
+    </div>
+  );
+}
+
+function StatusDot({ status }: { status: NodeStatus }) {
+  if (status === 'active') {
+    return <div className="shrink-0 h-3 w-3 rounded-full border-2 border-accent border-t-transparent animate-spin" />;
+  }
+  if (status === 'success') {
+    return <div className="shrink-0 h-2 w-2 rounded-full bg-emerald-500" />;
+  }
+  if (status === 'failed') {
+    return <div className="shrink-0 h-2 w-2 rounded-full bg-fall" />;
+  }
+  return <div className="shrink-0 h-2 w-2 rounded-full bg-divider" />;
+}
+
+function Connector({ active }: { active: boolean }) {
+  return (
+    <div className="flex justify-start pl-[14px]">
+      <div className={`w-px h-4 ${active ? 'bg-accent/40' : 'bg-divider'}`} />
+    </div>
+  );
+}
+
+type HandleSpec = { type: 'target' | 'source'; position: 'top' | 'right' | 'bottom' | 'left' };
+
+type FlowNodeData = {
+  label: string;             // used as tooltip/aria, not displayed
+  iconSrc?: string;          // image path in /public
+  iconEmoji?: string;        // fallback when no iconSrc
+  status: NodeStatus;
+  result?: string | null;    // shown inside node when status === 'success'
+  resultIsLink?: boolean;
+  onCancel?: () => void;
+  onRetry?: () => void;
+  isSelected?: boolean;
+  handles: HandleSpec[];
+};
+
+const positionMap = {
+  top: Position.Top,
+  right: Position.Right,
+  bottom: Position.Bottom,
+  left: Position.Left,
+} as const;
+
+function FlowPipelineNode(props: NodeProps) {
+  const data = props.data as unknown as FlowNodeData;
+  const isActive = data.status === 'active';
+
+  const wrapperCls =
+    isActive ? 'border-transparent' :
+    data.status === 'success' ? 'border-emerald-500/50' :
+    data.status === 'failed' ? 'border-fall/60' :
+    'border-divider';
+
+  const iconCls = data.status === 'pending' ? 'opacity-30' : 'opacity-100';
+
+  return (
+    <div className="relative" style={{ width: 110 }}>
+      {/* Spinning conic-gradient border for active state — angle animated via @property so the element itself doesn't rotate (no corner sweep) */}
+      {isActive && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -inset-[2px] rounded-[14px]"
+          style={{
+            background:
+              'conic-gradient(from var(--pd-border-angle), transparent 0deg, rgba(56,189,248,0.35) 60deg, rgb(56 189 248) 120deg, rgb(34 211 238) 160deg, rgba(34,211,238,0.35) 220deg, transparent 280deg, transparent 360deg)',
+            animation: 'pd-border-spin 1.4s linear infinite',
+          } as React.CSSProperties}
+        />
+      )}
+
+      <div
+        title={data.label}
+        className={`relative flex flex-col items-center gap-1.5 rounded-xl border bg-surface p-2 ${wrapperCls} transition-colors`}
+      >
+        {data.handles.map((h, i) => (
+          <Handle
+            key={`${h.type}-${h.position}-${i}`}
+            type={h.type}
+            position={positionMap[h.position]}
+            isConnectable={false}
+            style={{ width: 1, height: 1, background: 'transparent', border: 'none' }}
+          />
+        ))}
+
+        {/* Icon */}
+        <div className={`h-10 w-10 flex items-center justify-center ${iconCls}`}>
+          {data.iconSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={data.iconSrc} alt={data.label} className="h-full w-full object-contain" />
+          ) : (
+            <span className="text-2xl select-none">{data.iconEmoji}</span>
+          )}
+        </div>
+
+        {/* Active: optional cancel button (border spin handles the loading indication) */}
+        {isActive && data.onCancel && (
+          <button
+            onClick={(e) => { e.stopPropagation(); data.onCancel?.(); }}
+            className="rounded-md border border-fall/40 px-2 py-0.5 text-[10px] font-semibold text-fall hover:bg-fall/10 cursor-pointer bg-transparent transition-colors"
+          >
+            ✕ Cancel
+          </button>
+        )}
+
+        {/* Success: result (path or link) */}
+        {data.status === 'success' && data.result && (
+          data.resultIsLink ? (
+            <a
+              href={data.result}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="block w-full text-[9px] font-mono text-accent hover:underline break-all text-center line-clamp-2"
+            >
+              {data.result}
+            </a>
+          ) : (
+            <p className="w-full text-[9px] font-mono text-primary break-all text-center line-clamp-2">
+              {data.result}
+            </p>
+          )
+        )}
+
+        {/* Failed: retry */}
+        {data.status === 'failed' && data.onRetry && (
+          <button
+            onClick={(e) => { e.stopPropagation(); data.onRetry?.(); }}
+            className="rounded-md border border-divider px-2 py-0.5 text-[10px] font-semibold text-muted hover:text-primary hover:bg-divider/40 cursor-pointer bg-transparent transition-colors"
+          >
+            ↺ Retry
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const flowNodeTypes = { pipeline: FlowPipelineNode };
+
+function FlowCanvas({
+  nodes,
+  edges,
+  nodesKey,
+  onNodeClick,
+  onPaneClick,
+}: {
+  nodes: Node[];
+  edges: Edge[];
+  nodesKey: string;
+  onNodeClick: (id: string) => void;
+  onPaneClick: () => void;
+}) {
+  const { fitView } = useReactFlow();
+  useEffect(() => {
+    let resizeRaf = 0;
+    const raf = requestAnimationFrame(() => {
+      resizeRaf = requestAnimationFrame(() => {
+        fitView({ padding: 0.2, duration: 250 });
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      cancelAnimationFrame(resizeRaf);
+    };
+  }, [nodesKey, fitView]);
+
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={flowNodeTypes}
+      fitView
+      fitViewOptions={{ padding: 0.2 }}
+      nodesDraggable={false}
+      nodesConnectable={false}
+      elementsSelectable={false}
+      nodesFocusable={false}
+      edgesFocusable={false}
+      panOnDrag={false}
+      panOnScroll={false}
+      zoomOnScroll={false}
+      zoomOnPinch={false}
+      zoomOnDoubleClick={false}
+      preventScrolling={false}
+      minZoom={0.1}
+      maxZoom={1.5}
+      proOptions={{ hideAttribution: true }}
+      onNodeClick={(_, node) => onNodeClick(node.id)}
+      onPaneClick={onPaneClick}
+    >
+      <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="rgba(148, 163, 184, 0.22)" />
+    </ReactFlow>
+  );
+}
+
+function DetailField({ label, value, mono, link }: { label: string; value?: string | null; mono?: boolean; link?: boolean }) {
+  if (!value) return null;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[10px] font-semibold text-muted uppercase tracking-wide">{label}</span>
+      {link ? (
+        <a href={value} target="_blank" rel="noreferrer" className="text-[11px] text-accent hover:underline break-all">
+          {value}
+        </a>
+      ) : (
+        <span className={`text-[11px] text-primary break-all ${mono ? 'font-mono' : ''}`}>{value}</span>
+      )}
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: NodeStatus }) {
+  const cls =
+    status === 'active' ? 'bg-accent/15 text-accent' :
+    status === 'success' ? 'bg-emerald-500/15 text-emerald-500' :
+    status === 'failed' ? 'bg-fall/15 text-fall' :
+    'bg-divider/40 text-muted';
+  const label =
+    status === 'active' ? 'Running' :
+    status === 'success' ? 'Success' :
+    status === 'failed' ? 'Failed' :
+    'Pending';
+  return <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${cls}`}>{label}</span>;
+}
+
+type DetailPanelProps = {
+  selectedNodeId: string | null;
+  capturedImages: string[];
+  captureStatus: NodeStatus;
+  videoState: VideoState;
+  renderNodeStatus: NodeStatus;
+  publishStatus: NodeStatus;
+  sixGateState: SixGateState;
+  jobInfos: Record<string, JobInfo>;
+  fbContent: string;
+  onCancelRender?: () => void;
+};
+
+function DetailPanel({
+  selectedNodeId,
+  capturedImages,
+  captureStatus,
+  videoState,
+  renderNodeStatus,
+  publishStatus,
+  sixGateState,
+  jobInfos,
+  fbContent,
+  onCancelRender,
+}: DetailPanelProps) {
+  if (!selectedNodeId) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
+        <div className="text-2xl opacity-40">◇</div>
+        <p className="text-xs text-muted">Click any step to see its details.</p>
+      </div>
+    );
+  }
+
+  if (selectedNodeId === 'render') {
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-primary flex items-center gap-2">
+            <span className="text-base">🎬</span> Render Video
+          </h3>
+          <StatusBadge status={renderNodeStatus} />
+        </div>
+        <DetailField label="Endpoint" value="POST localhost:8010/api/zhihugen/render/upload" mono />
+        {videoState.phase === 'rendering' && (
+          <>
+            <DetailField label="Job ID" value={videoState.jobId} mono />
+            {videoState.cancelling && <DetailField label="State" value="Cancelling…" />}
+            {onCancelRender && (
+              <button
+                onClick={onCancelRender}
+                disabled={videoState.cancelling}
+                className="self-start mt-1 rounded-md border border-fall/40 px-2.5 py-1 text-[11px] font-semibold text-fall hover:bg-fall/10 disabled:opacity-50 disabled:cursor-wait cursor-pointer bg-transparent transition-colors"
+              >
+                ✕ {videoState.cancelling ? 'Cancelling…' : 'Cancel render'}
+              </button>
+            )}
+          </>
+        )}
+        {videoState.phase === 'completed' && (
+          <>
+            <DetailField label="Job ID" value={videoState.jobId} mono />
+            <DetailField label="Output path" value={videoState.videoPath} mono />
+          </>
+        )}
+        {videoState.phase === 'failed' && <DetailField label="Error" value={videoState.error} />}
+      </div>
+    );
+  }
+
+  if (selectedNodeId === 'publish') {
+    const jobs = sixGateState.phase === 'submitted' ? sixGateState.jobs : [];
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-primary flex items-center gap-2">
+            <span className="text-base">📤</span> Publish
+          </h3>
+          <StatusBadge status={publishStatus} />
+        </div>
+        <DetailField label="Endpoint" value="POST localhost:20129/api/groups/{groupId}/upload-by-path" mono />
+        <DetailField label="Group ID" value={SIXGATE_ACCOUNT_ID} mono />
+        <DetailField label="Privacy" value="public" />
+        <DetailField label="Destinations" value={jobs.length > 0 ? `${jobs.length}` : undefined} />
+        {sixGateState.phase === 'failed' && <DetailField label="Error" value={sixGateState.error} />}
+        {fbContent && (
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold text-muted uppercase tracking-wide">Caption</span>
+            <div className="rounded-md border border-divider bg-surface px-2 py-1.5 text-[11px] text-primary leading-relaxed whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+              {fbContent}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (selectedNodeId.startsWith('job_')) {
+    const jobId = selectedNodeId.slice(4);
+    const jobs = sixGateState.phase === 'submitted' ? sixGateState.jobs : [];
+    const job = jobs.find((j) => j.id === jobId);
+    if (!job) return <p className="text-xs text-muted">Job no longer available.</p>;
+    const info = jobInfos[jobId];
+    const nodeStatus: NodeStatus =
+      !info || info.status === 'Created' ? 'pending' :
+      info.status === 'Published' ? 'success' :
+      info.status === 'Failed' || info.status === 'Cancelled' || info.status === 'ReconnectRequired' ? 'failed' :
+      'active';
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-primary flex items-center gap-2 min-w-0">
+            <span className="text-base shrink-0">{platformIcon(job.platform)}</span>
+            <span className="truncate">{job.destinationName}</span>
+          </h3>
+          <StatusBadge status={nodeStatus} />
+        </div>
+        <DetailField label="Platform" value={job.platform} />
+        <DetailField label="Destination ID" value={job.destinationId} mono />
+        <DetailField label="Status" value={info?.status ?? 'Created'} mono />
+        <DetailField label="Job ID" value={job.id} mono />
+        <DetailField label="Job Details" value={job.jobDetailsLink} link />
+        {info?.providerPostUrl && <DetailField label="Post URL" value={info.providerPostUrl} link />}
+        {info?.errorMessage && <DetailField label="Error" value={info.errorMessage} />}
+        {info?.status === 'ReconnectRequired' && (
+          <p className="text-[11px] text-fall leading-relaxed">
+            This account needs to be reconnected in the 6Gate app before retry.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return null;
+}
+
 
 type Props = {
   blocks: PostBlock[];
@@ -46,6 +516,9 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
   const [capturing, setCapturing] = useState(false);
   const [videoState, setVideoState] = useState<VideoState>({ phase: 'idle' });
   const [sixGateState, setSixGateState] = useState<SixGateState>({ phase: 'idle' });
+  const [jobInfos, setJobInfos] = useState<Record<string, JobInfo>>({});
+  const [pollKey, setPollKey] = useState(0);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const groupRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const fbContent = formatFacebookPostFromBlocks(editedBlocks);
@@ -132,6 +605,8 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
       if (result.status === 'completed' && result.outputVideoPath) {
         setVideoState({ phase: 'completed', jobId, videoPath: result.outputVideoPath });
         postTo6Gate(result.outputVideoPath);
+      } else if (result.status === 'cancelled') {
+        setVideoState({ phase: 'failed', error: 'Render cancelled' });
       } else {
         setVideoState({ phase: 'failed', error: result.error ?? 'Job failed' });
       }
@@ -146,7 +621,7 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
       const res = await fetch(`http://localhost:20129/api/groups/${SIXGATE_ACCOUNT_ID}/upload-by-path`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoPath, title }),
+        body: JSON.stringify({ videoPath, title, caption: fbContent, privacy: 'public' }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string };
@@ -165,13 +640,128 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
     if (!alreadyRunning) {
       setVideoState({ phase: 'idle' });
       setSixGateState({ phase: 'idle' });
+      setJobInfos({});
       renderVideo();
+    }
+  }
+
+  function retryRender() {
+    setVideoState({ phase: 'idle' });
+    setSixGateState({ phase: 'idle' });
+    setJobInfos({});
+    renderVideo();
+  }
+
+  async function cancelRender() {
+    if (videoState.phase !== 'rendering' || videoState.cancelling) return;
+    const jobId = videoState.jobId;
+    setVideoState({ phase: 'rendering', jobId, cancelling: true });
+    try {
+      await fetch(`http://localhost:8010/api/zhihugen/jobs/${jobId}/cancel`, { method: 'POST' });
+    } catch {
+      // /wait will surface the final state
+    }
+  }
+
+  function retryPublish() {
+    if (videoState.phase !== 'completed') return;
+    setSixGateState({ phase: 'idle' });
+    setJobInfos({});
+    postTo6Gate(videoState.videoPath);
+  }
+
+  async function retryJob(jobId: string) {
+    try {
+      await fetch(`http://localhost:20129/api/post-jobs/${jobId}/retry`, { method: 'POST' });
+      setJobInfos((prev) => {
+        const next = { ...prev };
+        delete next[jobId];
+        return next;
+      });
+      setPollKey((k) => k + 1);
+    } catch {
+      // surface via next poll cycle
     }
   }
 
   useEffect(() => {
     if (tab === 'image') captureImages();
   }, [tab, captureImages]);
+
+  // Auto-select the most "interesting" node when nothing is selected yet
+  useEffect(() => {
+    if (tab !== 'video' || selectedNodeId !== null) return;
+    if (videoState.phase === 'capturing' || videoState.phase === 'rendering') setSelectedNodeId('render');
+    else if (sixGateState.phase === 'submitting') setSelectedNodeId('publish');
+    else if (sixGateState.phase === 'submitted') {
+      const firstActive = sixGateState.jobs.find((j) => {
+        const s = jobInfos[j.id]?.status;
+        return s && s !== 'Published' && s !== 'Failed' && s !== 'Cancelled';
+      });
+      setSelectedNodeId(firstActive ? `job_${firstActive.id}` : 'publish');
+    }
+    else if (videoState.phase === 'completed') setSelectedNodeId('publish');
+    else if (videoState.phase === 'failed') setSelectedNodeId('render');
+  }, [tab, selectedNodeId, videoState, sixGateState, jobInfos]);
+
+  // Stream live job status via SSE — one connection per submitted batch
+  useEffect(() => {
+    if (sixGateState.phase !== 'submitted') return;
+    const jobIds = new Set(sixGateState.jobs.map((j) => j.id));
+    const es = new EventSource('http://localhost:20129/api/post-jobs/stream');
+
+    es.addEventListener('snapshot', (e) => {
+      try {
+        const all = JSON.parse((e as MessageEvent).data) as Array<{
+          id: string;
+          status: JobStatus;
+          providerPostUrl: string | null;
+          errorMessage: string | null;
+        }>;
+        setJobInfos((prev) => {
+          const next = { ...prev };
+          for (const j of all) {
+            if (jobIds.has(j.id)) {
+              next[j.id] = {
+                status: j.status,
+                providerPostUrl: j.providerPostUrl,
+                errorMessage: j.errorMessage,
+              };
+            }
+          }
+          return next;
+        });
+      } catch {
+        // ignore parse errors
+      }
+    });
+
+    es.addEventListener('status', (e) => {
+      try {
+        const ev = JSON.parse((e as MessageEvent).data) as {
+          jobId: string;
+          status: JobStatus;
+          providerPostUrl?: string | null;
+          errorMessage?: string | null;
+        };
+        if (!jobIds.has(ev.jobId)) return;
+        setJobInfos((prev) => ({
+          ...prev,
+          [ev.jobId]: {
+            status: ev.status,
+            providerPostUrl: ev.providerPostUrl ?? prev[ev.jobId]?.providerPostUrl ?? null,
+            errorMessage: ev.errorMessage ?? prev[ev.jobId]?.errorMessage ?? null,
+          },
+        }));
+      } catch {
+        // ignore parse errors
+      }
+    });
+
+    return () => {
+      es.close();
+    };
+  }, [sixGateState, pollKey]);
 
   async function postToFacebook() {
     setPosting(true);
@@ -206,7 +796,7 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={handleBackdrop}>
-      <div className="flex w-[540px] max-w-[95vw] flex-col rounded-2xl bg-panel shadow-2xl max-h-[90vh]">
+      <div className="flex w-[960px] max-w-[95vw] flex-col rounded-2xl bg-panel shadow-2xl max-h-[90vh]">
 
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-2.5 border-b border-divider shrink-0" lang={contentLang}>
@@ -244,7 +834,7 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
           </div>
 
           {tab === 'facebook' && (
-            <div className="rounded-xl border border-divider bg-surface overflow-hidden">
+            <div className="rounded-xl border border-divider bg-surface overflow-hidden max-w-[520px] mx-auto">
               <div className="flex items-center gap-2.5 px-4 pt-3 pb-2">
                 <div className="h-9 w-9 shrink-0 rounded-full bg-[#1877F2] flex items-center justify-center text-white text-sm font-bold select-none">
                   f
@@ -266,7 +856,7 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
           )}
 
           {tab === 'edit' && (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 max-w-[520px] mx-auto">
               {editedBlocks.map((b, i) => {
                 const label = b.isMain ? 'Bài viết' : b.isReply ? '↳ Trả lời' : 'Bình luận';
                 return (
@@ -292,106 +882,199 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
             </div>
           )}
 
-          {tab === 'video' && (
-            <div className="flex flex-col gap-4">
-              {videoState.phase === 'idle' && (
-                <div className="flex flex-col items-center gap-3 py-6 text-center">
-                  <p className="text-xs text-muted">Captures all thread images and sends them to Zhihugen to render a video.</p>
-                  <button
-                    onClick={renderVideo}
-                    className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-white hover:opacity-90 cursor-pointer transition-opacity"
-                  >
-                    ▶ Render Video
-                  </button>
-                </div>
-              )}
+          {tab === 'video' && (() => {
+            // Per-node status derivation
+            // Capture is folded into the Render node — its phase reads as 'active' too
+            const captureStatus: NodeStatus =
+              videoState.phase === 'idle' ? 'pending' :
+              videoState.phase === 'capturing' ? 'active' :
+              (videoState.phase === 'failed' && capturedImages.length === 0) ? 'failed' :
+              'success';
 
-              {(videoState.phase === 'capturing') && (
-                <div className="flex flex-col items-center gap-2 py-6 text-center">
-                  <div className="h-4 w-4 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-                  <p className="text-xs text-muted">Capturing images…</p>
-                </div>
-              )}
+            const renderNodeStatus: NodeStatus =
+              videoState.phase === 'idle' ? 'pending' :
+              videoState.phase === 'capturing' || videoState.phase === 'rendering' ? 'active' :
+              videoState.phase === 'completed' ? 'success' :
+              'failed';
 
-              {videoState.phase === 'rendering' && (
-                <div className="flex flex-col items-center gap-2 py-6 text-center">
-                  <div className="h-4 w-4 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-                  <p className="text-xs text-muted">Rendering video…</p>
-                  <p className="text-[10px] font-mono text-muted/60">{videoState.jobId}</p>
-                </div>
-              )}
+            const publishStatus: NodeStatus =
+              videoState.phase !== 'completed' ? 'pending' :
+              sixGateState.phase === 'idle' || sixGateState.phase === 'submitting' ? 'active' :
+              sixGateState.phase === 'submitted' ? 'success' :
+              'failed';
 
-              {videoState.phase === 'completed' && (
-                <div className="flex flex-col gap-3">
-                  <div className="rounded-xl border border-divider bg-surface p-4 flex flex-col gap-2">
-                    <p className="text-[10px] font-semibold text-accent uppercase tracking-wide">Video ready</p>
-                    <p className="break-all text-[12px] font-mono text-primary select-all">{videoState.videoPath}</p>
-                    <button
-                      onClick={() => navigator.clipboard.writeText(videoState.videoPath)}
-                      className="self-start rounded-md border border-divider bg-transparent px-2.5 py-1 text-[11px] font-semibold text-muted hover:text-primary cursor-pointer transition-colors"
-                    >
-                      Copy path
-                    </button>
+            const jobs = sixGateState.phase === 'submitted' ? sixGateState.jobs : [];
+            const nodesKey = [
+              jobs.length,
+              ...jobs.map((j) => {
+                const info = jobInfos[j.id];
+                return [
+                  j.id,
+                  info?.status ?? 'Created',
+                  info?.providerPostUrl ?? '',
+                  info?.errorMessage ?? '',
+                ].join(':');
+              }),
+            ].join('|');
+
+            const jobCount = jobs.length;
+            const PUBLISH_Y = 140;
+            const JOB_GAP = 120;
+            const jobYStart = jobCount > 0 ? PUBLISH_Y - (jobCount - 1) * (JOB_GAP / 2) : PUBLISH_Y;
+
+            const baseOpts = { draggable: false, selectable: false, deletable: false, connectable: false } as const;
+
+            const renderCanCancel = videoState.phase === 'rendering' && !videoState.cancelling;
+
+            const nodes: Node[] = [
+              {
+                id: 'render',
+                type: 'pipeline',
+                position: { x: 40, y: 0 },
+                data: {
+                  label: 'Render Video',
+                  iconSrc: '/render-icon.png',
+                  status: renderNodeStatus,
+                  result: videoState.phase === 'completed' ? videoState.videoPath : null,
+                  resultIsLink: false,
+                  onCancel: renderCanCancel ? cancelRender : undefined,
+                  onRetry: retryRender,
+                  isSelected: selectedNodeId === 'render',
+                  handles: [{ type: 'source', position: 'bottom' }],
+                },
+                ...baseOpts,
+              },
+              {
+                id: 'publish',
+                type: 'pipeline',
+                position: { x: 40, y: PUBLISH_Y },
+                data: {
+                  label: 'Publish to 6Gate',
+                  iconSrc: '/6gate-icon.png',
+                  status: publishStatus,
+                  onRetry: videoState.phase === 'completed' ? retryPublish : undefined,
+                  isSelected: selectedNodeId === 'publish',
+                  handles: [
+                    { type: 'target', position: 'top' },
+                    { type: 'source', position: 'right' },
+                  ],
+                },
+                ...baseOpts,
+              },
+              ...jobs.map((job, i) => {
+                const info = jobInfos[job.id];
+                const jobNodeStatus: NodeStatus =
+                  !info || info.status === 'Created' ? 'pending' :
+                  info.status === 'Published' ? 'success' :
+                  info.status === 'Failed' || info.status === 'Cancelled' || info.status === 'ReconnectRequired' ? 'failed' :
+                  'active';
+                const nodeKey = `job_${job.id}`;
+                return {
+                  id: nodeKey,
+                  type: 'pipeline',
+                  position: { x: 220, y: jobYStart + i * JOB_GAP },
+                  data: {
+                    label: job.destinationName,
+                    iconSrc: job.destinationIcon,
+                    iconEmoji: platformIcon(job.platform),
+                    status: jobNodeStatus,
+                    result: info?.status === 'Published' ? info.providerPostUrl : null,
+                    resultIsLink: true,
+                    onRetry: info?.status === 'Failed' ? () => retryJob(job.id) : undefined,
+                    isSelected: selectedNodeId === nodeKey,
+                    handles: [{ type: 'target', position: 'left' }],
+                  },
+                  ...baseOpts,
+                } as Node;
+              }),
+            ];
+
+            const edgeBase = {
+              type: 'smoothstep' as const,
+              style: { stroke: 'rgb(148 163 184 / 0.45)', strokeWidth: 1.5 },
+            };
+            const edges: Edge[] = [
+              { id: 'e_ren_pub', source: 'render', target: 'publish', animated: publishStatus === 'active', ...edgeBase },
+              ...jobs.map((job) => {
+                const info = jobInfos[job.id];
+                const jobActive = info && info.status !== 'Created' && info.status !== 'Published'
+                  && info.status !== 'Failed' && info.status !== 'Cancelled' && info.status !== 'ReconnectRequired';
+                return {
+                  id: `e_pub_${job.id}`,
+                  source: 'publish',
+                  target: `job_${job.id}`,
+                  animated: !!jobActive,
+                  ...edgeBase,
+                } as Edge;
+              }),
+            ];
+
+            return (
+              <div className="flex gap-4">
+                {/* LEFT: read-only n8n-style canvas */}
+                <div className="flex-1 min-w-0 flex flex-col">
+                  <div className="rounded-xl border border-divider bg-surface/30 overflow-hidden" style={{ height: 380 }}>
+                    <ReactFlowProvider>
+                      <FlowCanvas
+                        nodes={nodes}
+                        edges={edges}
+                        nodesKey={nodesKey}
+                        onNodeClick={(id) => setSelectedNodeId(id)}
+                        onPaneClick={() => setSelectedNodeId(null)}
+                      />
+                    </ReactFlowProvider>
                   </div>
 
-                  {/* 6Gate status — auto-triggered after render */}
-                  <div className="rounded-xl border border-divider bg-surface px-4 py-3 flex items-center gap-2">
-                    <p className="text-[10px] font-semibold text-muted shrink-0">6Gate</p>
-                    {sixGateState.phase === 'submitting' && (
-                      <>
-                        <div className="h-3 w-3 rounded-full border-2 border-accent border-t-transparent animate-spin shrink-0" />
-                        <span className="text-[11px] text-muted">Submitting…</span>
-                      </>
+                  {/* Footer actions under canvas */}
+                  <div className="flex items-center justify-end gap-2 pt-3">
+                    {videoState.phase === 'idle' && (
+                      <button
+                        onClick={renderVideo}
+                        className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 cursor-pointer transition-opacity"
+                      >
+                        ▶ Start
+                      </button>
                     )}
-                    {sixGateState.phase === 'submitted' && (
-                      <div className="flex flex-col gap-0.5 w-full">
-                        {sixGateState.jobs.map((job) => (
-                          <div key={job.id} className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-semibold text-accent uppercase">{job.platform}</span>
-                            <span className="text-[10px] text-muted truncate">{job.destinationName}</span>
-                            <span className="ml-auto text-[9px] font-mono text-muted/50 shrink-0">{job.id}</span>
-                          </div>
-                        ))}
-                      </div>
+                    {videoState.phase === 'completed' && (
+                      <button
+                        onClick={() => { setSelectedNodeId(null); setVideoState({ phase: 'idle' }); setSixGateState({ phase: 'idle' }); setJobInfos({}); renderVideo(); }}
+                        className="text-[11px] text-muted hover:text-primary cursor-pointer bg-transparent border-0"
+                      >
+                        ↺ Run again
+                      </button>
                     )}
-                    {sixGateState.phase === 'failed' && videoState.phase === 'completed' && (
-                      <>
-                        <span className="text-[11px] text-fall truncate">{sixGateState.error}</span>
-                        <button
-                          onClick={() => postTo6Gate(videoState.videoPath)}
-                          className="shrink-0 text-[11px] text-muted hover:text-primary cursor-pointer bg-transparent border-0"
-                        >
-                          Retry
-                        </button>
-                      </>
+                    {videoState.phase === 'failed' && (
+                      <button
+                        onClick={() => { setSelectedNodeId(null); setVideoState({ phase: 'idle' }); }}
+                        className="rounded-lg border border-divider px-3 py-1.5 text-xs font-semibold text-muted hover:text-primary cursor-pointer bg-transparent"
+                      >
+                        Try again
+                      </button>
                     )}
                   </div>
-
-                  <button
-                    onClick={() => { setVideoState({ phase: 'idle' }); setSixGateState({ phase: 'idle' }); renderVideo(); }}
-                    className="self-start text-[11px] text-muted hover:text-primary cursor-pointer bg-transparent border-0"
-                  >
-                    ↺ Render again
-                  </button>
                 </div>
-              )}
 
-              {videoState.phase === 'failed' && (
-                <div className="flex flex-col items-center gap-3 py-6 text-center">
-                  <p className="text-xs text-fall">{videoState.error}</p>
-                  <button
-                    onClick={() => setVideoState({ phase: 'idle' })}
-                    className="rounded-lg border border-divider px-3 py-1.5 text-xs font-semibold text-muted hover:text-primary cursor-pointer bg-transparent"
-                  >
-                    Try again
-                  </button>
+                {/* RIGHT: detail side panel */}
+                <div className="w-[340px] shrink-0 rounded-xl border border-divider bg-surface/40 p-4 self-start">
+                  <DetailPanel
+                    selectedNodeId={selectedNodeId}
+                    capturedImages={capturedImages}
+                    captureStatus={captureStatus}
+                    videoState={videoState}
+                    renderNodeStatus={renderNodeStatus}
+                    publishStatus={publishStatus}
+                    sixGateState={sixGateState}
+                    jobInfos={jobInfos}
+                    fbContent={fbContent}
+                    onCancelRender={cancelRender}
+                  />
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            );
+          })()}
 
           {tab === 'image' && (
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4 max-w-[520px] mx-auto">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted">{capturedImages.length} ảnh</span>
                 <button

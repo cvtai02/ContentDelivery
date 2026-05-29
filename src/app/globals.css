@@ -40,3 +40,13 @@
     @apply bg-accent text-white;
   }
 }
+
+@property --pd-border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes pd-border-spin {
+  to { --pd-border-angle: 360deg; }
+}
