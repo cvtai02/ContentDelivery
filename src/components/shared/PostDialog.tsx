@@ -25,9 +25,18 @@ type Tab = 'threads' | 'facebook' | 'edit' | 'image' | 'video';
 type VideoState =
   | { phase: 'idle' }
   | { phase: 'capturing' }
-  | { phase: 'rendering'; jobId: string; cancelling?: boolean }
-  | { phase: 'completed'; jobId: string; videoPath: string }
+  | { phase: 'rendering'; jobId: string; jobUrl?: string; cancelling?: boolean }
+  | { phase: 'completed'; jobId: string; jobUrl?: string; videoPath: string }
   | { phase: 'failed'; error: string };
+
+type RenderUploadResponse = {
+  jobId: string;
+  status: string;
+  videoFileName?: string;
+  jobUrl?: string;
+  jobWaitUrl?: string;
+  jobsUrl?: string;
+};
 
 type SixGateJob = {
   id: string;
@@ -36,6 +45,7 @@ type SixGateJob = {
   destinationIcon: string;
   platform: string;
   jobDetailsLink: string;
+  jobCancelLink: string;
 };
 
 type SixGateState =
@@ -161,12 +171,16 @@ type FlowNodeData = {
   label: string;             // used as tooltip/aria, not displayed
   iconSrc?: string;          // image path in /public
   iconEmoji?: string;        // fallback when no iconSrc
+  displayLabel?: string;
   status: NodeStatus;
   result?: string | null;    // shown inside node when status === 'success'
+  resultLabel?: string;
   resultIsLink?: boolean;
   onCancel?: () => void;
   onRetry?: () => void;
   isSelected?: boolean;
+  showWaiting?: boolean;
+  retryTitle?: string;
   handles: HandleSpec[];
 };
 
@@ -180,19 +194,20 @@ const positionMap = {
 function FlowPipelineNode(props: NodeProps) {
   const data = props.data as unknown as FlowNodeData;
   const isActive = data.status === 'active';
+  const isLoading = isActive || (data.status === 'pending' && data.showWaiting);
 
   const wrapperCls =
-    isActive ? 'border-transparent' :
+    isLoading ? 'border-transparent' :
     data.status === 'success' ? 'border-emerald-500/50' :
     data.status === 'failed' ? 'border-fall/60' :
     'border-divider';
 
   const iconCls = data.status === 'pending' ? 'opacity-30' : 'opacity-100';
+  const showRetry = !isLoading && !!data.onRetry;
 
   return (
     <div className="relative" style={{ width: 110 }}>
-      {/* Spinning conic-gradient border for active state — angle animated via @property so the element itself doesn't rotate (no corner sweep) */}
-      {isActive && (
+      {isLoading && (
         <div
           aria-hidden
           className="pointer-events-none absolute -inset-[2px] rounded-[14px]"
@@ -206,7 +221,7 @@ function FlowPipelineNode(props: NodeProps) {
 
       <div
         title={data.label}
-        className={`relative flex flex-col items-center gap-1.5 rounded-xl border bg-surface p-2 ${wrapperCls} transition-colors`}
+        className={`group relative flex flex-col items-center gap-1.5 rounded-xl border bg-surface p-2 ${wrapperCls} transition-colors`}
       >
         {data.handles.map((h, i) => (
           <Handle
@@ -218,8 +233,7 @@ function FlowPipelineNode(props: NodeProps) {
           />
         ))}
 
-        {/* Icon */}
-        <div className={`h-10 w-10 flex items-center justify-center ${iconCls}`}>
+        <div className={`relative h-10 w-10 flex items-center justify-center ${iconCls}`}>
           {data.iconSrc ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={data.iconSrc} alt={data.label} className="h-full w-full object-contain" />
@@ -228,17 +242,31 @@ function FlowPipelineNode(props: NodeProps) {
           )}
         </div>
 
-        {/* Active: optional cancel button (border spin handles the loading indication) */}
+        {data.displayLabel && (
+          <p className="w-full text-center text-[10px] font-semibold leading-3 text-primary line-clamp-2">
+            {data.displayLabel}
+          </p>
+        )}
+
+        {showRetry && (
+          <button
+            onClick={(e) => { e.stopPropagation(); data.onRetry?.(); }}
+            title={data.retryTitle ?? 'Retry this step'}
+            className="absolute bottom-1 left-1 z-10 rounded-md border border-white px-2 py-0.5 text-[10px] font-semibold text-white opacity-0 hover:bg-white/10 cursor-pointer bg-black/45 transition-opacity group-hover:opacity-100"
+          >
+            Retry
+          </button>
+        )}
         {isActive && data.onCancel && (
           <button
             onClick={(e) => { e.stopPropagation(); data.onCancel?.(); }}
-            className="rounded-md border border-fall/40 px-2 py-0.5 text-[10px] font-semibold text-fall hover:bg-fall/10 cursor-pointer bg-transparent transition-colors"
+            title="Cancel this step"
+            className="absolute bottom-1 right-1 z-10 rounded-md border border-fall px-2 py-0.5 text-[10px] font-semibold text-fall opacity-0 hover:bg-fall/10 cursor-pointer bg-black/45 transition-opacity group-hover:opacity-100"
           >
-            ✕ Cancel
+            Cancel
           </button>
         )}
 
-        {/* Success: result (path or link) */}
         {data.status === 'success' && data.result && (
           data.resultIsLink ? (
             <a
@@ -246,31 +274,30 @@ function FlowPipelineNode(props: NodeProps) {
               target="_blank"
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="block w-full text-[9px] font-mono text-accent hover:underline break-all text-center line-clamp-2"
+              className="
+                block
+                mx-auto
+                whitespace-normal
+                break-words
+                text-center
+                text-[10px]
+                font-mono
+                text-accent
+                hover:underline
+                "
             >
-              {data.result}
+              View post
             </a>
           ) : (
-            <p className="w-full text-[9px] font-mono text-primary break-all text-center line-clamp-2">
-              {data.result}
+            <p className="w-full text-[9px] font-mono text-primary break-all text-center max-w-[20ch] break-words">
+              View post 
             </p>
           )
-        )}
-
-        {/* Failed: retry */}
-        {data.status === 'failed' && data.onRetry && (
-          <button
-            onClick={(e) => { e.stopPropagation(); data.onRetry?.(); }}
-            className="rounded-md border border-divider px-2 py-0.5 text-[10px] font-semibold text-muted hover:text-primary hover:bg-divider/40 cursor-pointer bg-transparent transition-colors"
-          >
-            ↺ Retry
-          </button>
         )}
       </div>
     </div>
   );
 }
-
 const flowNodeTypes = { pipeline: FlowPipelineNode };
 
 function FlowCanvas({
@@ -368,6 +395,7 @@ type DetailPanelProps = {
   publishStatus: NodeStatus;
   sixGateState: SixGateState;
   jobInfos: Record<string, JobInfo>;
+  title: string;
   fbContent: string;
   onCancelRender?: () => void;
 };
@@ -381,6 +409,7 @@ function DetailPanel({
   publishStatus,
   sixGateState,
   jobInfos,
+  title,
   fbContent,
   onCancelRender,
 }: DetailPanelProps) {
@@ -398,14 +427,17 @@ function DetailPanel({
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-primary flex items-center gap-2">
-            <span className="text-base">🎬</span> Render Video
+            <span className="h-5 w-5 shrink-0 rounded bg-surface flex items-center justify-center overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/render-icon.png" alt="" className="h-full w-full object-contain" />
+            </span>
+            Render Video
           </h3>
           <StatusBadge status={renderNodeStatus} />
         </div>
-        <DetailField label="Endpoint" value="POST localhost:8010/api/zhihugen/render/upload" mono />
         {videoState.phase === 'rendering' && (
           <>
-            <DetailField label="Job ID" value={videoState.jobId} mono />
+            <DetailField label="Job Details" value={videoState.jobUrl} link />
             {videoState.cancelling && <DetailField label="State" value="Cancelling…" />}
             {onCancelRender && (
               <button
@@ -420,7 +452,7 @@ function DetailPanel({
         )}
         {videoState.phase === 'completed' && (
           <>
-            <DetailField label="Job ID" value={videoState.jobId} mono />
+            <DetailField label="Job Details" value={videoState.jobUrl} link />
             <DetailField label="Output path" value={videoState.videoPath} mono />
           </>
         )}
@@ -430,7 +462,6 @@ function DetailPanel({
   }
 
   if (selectedNodeId === 'publish') {
-    const jobs = sixGateState.phase === 'submitted' ? sixGateState.jobs : [];
     return (
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
@@ -439,10 +470,8 @@ function DetailPanel({
           </h3>
           <StatusBadge status={publishStatus} />
         </div>
-        <DetailField label="Endpoint" value="POST localhost:20129/api/groups/{groupId}/upload-by-path" mono />
-        <DetailField label="Group ID" value={SIXGATE_ACCOUNT_ID} mono />
-        <DetailField label="Privacy" value="public" />
-        <DetailField label="Destinations" value={jobs.length > 0 ? `${jobs.length}` : undefined} />
+        <DetailField label="Group name" value={SIXGATE_ACCOUNT_ID} />
+        <DetailField label="Title" value={title} />
         {sixGateState.phase === 'failed' && <DetailField label="Error" value={sixGateState.error} />}
         {fbContent && (
           <div className="flex flex-col gap-0.5">
@@ -452,6 +481,10 @@ function DetailPanel({
             </div>
           </div>
         )}
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] font-semibold text-muted uppercase tracking-wide">Group settings</span>
+          <span className="text-[11px] text-muted">Empty</span>
+        </div>
       </div>
     );
   }
@@ -461,33 +494,16 @@ function DetailPanel({
     const jobs = sixGateState.phase === 'submitted' ? sixGateState.jobs : [];
     const job = jobs.find((j) => j.id === jobId);
     if (!job) return <p className="text-xs text-muted">Job no longer available.</p>;
-    const info = jobInfos[jobId];
-    const nodeStatus: NodeStatus =
-      !info || info.status === 'Created' ? 'pending' :
-      info.status === 'Published' ? 'success' :
-      info.status === 'Failed' || info.status === 'Cancelled' || info.status === 'ReconnectRequired' ? 'failed' :
-      'active';
     return (
       <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-primary flex items-center gap-2 min-w-0">
             <span className="text-base shrink-0">{platformIcon(job.platform)}</span>
             <span className="truncate">{job.destinationName}</span>
           </h3>
-          <StatusBadge status={nodeStatus} />
         </div>
-        <DetailField label="Platform" value={job.platform} />
-        <DetailField label="Destination ID" value={job.destinationId} mono />
-        <DetailField label="Status" value={info?.status ?? 'Created'} mono />
-        <DetailField label="Job ID" value={job.id} mono />
+        <DetailField label="Destination name" value={job.destinationName} />
         <DetailField label="Job Details" value={job.jobDetailsLink} link />
-        {info?.providerPostUrl && <DetailField label="Post URL" value={info.providerPostUrl} link />}
-        {info?.errorMessage && <DetailField label="Error" value={info.errorMessage} />}
-        {info?.status === 'ReconnectRequired' && (
-          <p className="text-[11px] text-fall leading-relaxed">
-            This account needs to be reconnected in the 6Gate app before retry.
-          </p>
-        )}
       </div>
     );
   }
@@ -595,15 +611,16 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
 
       const res = await fetch('http://localhost:8010/api/zhihugen/render/upload', { method: 'POST', body: form });
       if (!res.ok) throw new Error(`Server error ${res.status}`);
-      const { jobId } = await res.json() as { jobId: string };
+      const upload = await res.json() as RenderUploadResponse;
+      const { jobId, jobUrl } = upload;
 
-      setVideoState({ phase: 'rendering', jobId });
+      setVideoState({ phase: 'rendering', jobId, jobUrl });
 
-      const waitRes = await fetch(`http://localhost:8010/api/zhihugen/jobs/${jobId}/wait`);
+      const waitRes = await fetch(upload.jobWaitUrl ?? `http://localhost:8010/api/zhihugen/jobs/${jobId}/wait`);
       const result = await waitRes.json() as { status: string; outputVideoPath?: string; error?: string };
 
       if (result.status === 'completed' && result.outputVideoPath) {
-        setVideoState({ phase: 'completed', jobId, videoPath: result.outputVideoPath });
+        setVideoState({ phase: 'completed', jobId, jobUrl, videoPath: result.outputVideoPath });
         postTo6Gate(result.outputVideoPath);
       } else if (result.status === 'cancelled') {
         setVideoState({ phase: 'failed', error: 'Render cancelled' });
@@ -645,7 +662,14 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
     }
   }
 
-  function retryRender() {
+  async function retryRender() {
+    if (videoState.phase === 'rendering') {
+      try {
+        await fetch(`http://localhost:8010/api/zhihugen/jobs/${videoState.jobId}/cancel`, { method: 'POST' });
+      } catch {
+        // Start a fresh render even if the old cancellation request cannot be confirmed.
+      }
+    }
     setVideoState({ phase: 'idle' });
     setSixGateState({ phase: 'idle' });
     setJobInfos({});
@@ -655,7 +679,7 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
   async function cancelRender() {
     if (videoState.phase !== 'rendering' || videoState.cancelling) return;
     const jobId = videoState.jobId;
-    setVideoState({ phase: 'rendering', jobId, cancelling: true });
+    setVideoState({ phase: 'rendering', jobId, jobUrl: videoState.jobUrl, cancelling: true });
     try {
       await fetch(`http://localhost:8010/api/zhihugen/jobs/${jobId}/cancel`, { method: 'POST' });
     } catch {
@@ -670,12 +694,23 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
     postTo6Gate(videoState.videoPath);
   }
 
-  async function retryJob(jobId: string) {
+  async function cancelJob(job: SixGateJob) {
     try {
-      await fetch(`http://localhost:20129/api/post-jobs/${jobId}/retry`, { method: 'POST' });
+      await fetch(job.jobCancelLink, { method: 'POST' });
+    } catch {
+      // The next status event/poll will surface the final state.
+    }
+  }
+
+  async function retryJob(job: SixGateJob, status?: JobStatus) {
+    try {
+      if (status && status !== 'Created' && status !== 'Published' && status !== 'Failed' && status !== 'Cancelled' && status !== 'ReconnectRequired') {
+        await cancelJob(job);
+      }
+      await fetch(`http://localhost:20129/api/post-jobs/${job.id}/retry`, { method: 'POST' });
       setJobInfos((prev) => {
         const next = { ...prev };
-        delete next[jobId];
+        delete next[job.id];
         return next;
       });
       setPollKey((k) => k + 1);
@@ -704,62 +739,40 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
     else if (videoState.phase === 'failed') setSelectedNodeId('render');
   }, [tab, selectedNodeId, videoState, sixGateState, jobInfos]);
 
-  // Stream live job status via SSE — one connection per submitted batch
+  // Stream each submitted job independently so destination nodes update and close cleanly.
   useEffect(() => {
     if (sixGateState.phase !== 'submitted') return;
-    const jobIds = new Set(sixGateState.jobs.map((j) => j.id));
-    const es = new EventSource('http://localhost:20129/api/post-jobs/stream');
+    const streams = sixGateState.jobs.map((job) => {
+      const es = new EventSource(`http://localhost:20129/api/post-jobs/${job.id}/events`);
 
-    es.addEventListener('snapshot', (e) => {
-      try {
-        const all = JSON.parse((e as MessageEvent).data) as Array<{
-          id: string;
-          status: JobStatus;
-          providerPostUrl: string | null;
-          errorMessage: string | null;
-        }>;
-        setJobInfos((prev) => {
-          const next = { ...prev };
-          for (const j of all) {
-            if (jobIds.has(j.id)) {
-              next[j.id] = {
-                status: j.status,
-                providerPostUrl: j.providerPostUrl,
-                errorMessage: j.errorMessage,
-              };
-            }
+      es.addEventListener('status', (e) => {
+        try {
+          const ev = JSON.parse((e as MessageEvent).data) as {
+            status: JobStatus;
+            providerPostUrl?: string | null;
+            errorMessage?: string | null;
+          };
+          setJobInfos((prev) => ({
+            ...prev,
+            [job.id]: {
+              status: ev.status,
+              providerPostUrl: ev.providerPostUrl ?? prev[job.id]?.providerPostUrl ?? null,
+              errorMessage: ev.errorMessage ?? prev[job.id]?.errorMessage ?? null,
+            },
+          }));
+          if (ev.status === 'Published' || ev.status === 'Failed' || ev.status === 'Cancelled') {
+            es.close();
           }
-          return next;
-        });
-      } catch {
-        // ignore parse errors
-      }
-    });
+        } catch {
+          // ignore parse errors
+        }
+      });
 
-    es.addEventListener('status', (e) => {
-      try {
-        const ev = JSON.parse((e as MessageEvent).data) as {
-          jobId: string;
-          status: JobStatus;
-          providerPostUrl?: string | null;
-          errorMessage?: string | null;
-        };
-        if (!jobIds.has(ev.jobId)) return;
-        setJobInfos((prev) => ({
-          ...prev,
-          [ev.jobId]: {
-            status: ev.status,
-            providerPostUrl: ev.providerPostUrl ?? prev[ev.jobId]?.providerPostUrl ?? null,
-            errorMessage: ev.errorMessage ?? prev[ev.jobId]?.errorMessage ?? null,
-          },
-        }));
-      } catch {
-        // ignore parse errors
-      }
+      return es;
     });
 
     return () => {
-      es.close();
+      streams.forEach((es) => es.close());
     };
   }, [sixGateState, pollKey]);
 
@@ -935,10 +948,11 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
                   label: 'Render Video',
                   iconSrc: '/render-icon.png',
                   status: renderNodeStatus,
-                  result: videoState.phase === 'completed' ? videoState.videoPath : null,
+                  result: null,
                   resultIsLink: false,
                   onCancel: renderCanCancel ? cancelRender : undefined,
                   onRetry: retryRender,
+                  retryTitle: renderCanCancel ? 'Cancel and retry render' : 'Retry render',
                   isSelected: selectedNodeId === 'render',
                   handles: [{ type: 'source', position: 'bottom' }],
                 },
@@ -953,6 +967,7 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
                   iconSrc: '/6gate-icon.png',
                   status: publishStatus,
                   onRetry: videoState.phase === 'completed' ? retryPublish : undefined,
+                  retryTitle: 'Retry publish to 6Gate',
                   isSelected: selectedNodeId === 'publish',
                   handles: [
                     { type: 'target', position: 'top' },
@@ -968,6 +983,8 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
                   info.status === 'Published' ? 'success' :
                   info.status === 'Failed' || info.status === 'Cancelled' || info.status === 'ReconnectRequired' ? 'failed' :
                   'active';
+                const jobCanCancel = jobNodeStatus === 'active';
+                const jobCanRetry = jobNodeStatus !== 'success';
                 const nodeKey = `job_${job.id}`;
                 return {
                   id: nodeKey,
@@ -975,13 +992,18 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
                   position: { x: 220, y: jobYStart + i * JOB_GAP },
                   data: {
                     label: job.destinationName,
+                    displayLabel: job.destinationName,
                     iconSrc: job.destinationIcon,
                     iconEmoji: platformIcon(job.platform),
                     status: jobNodeStatus,
                     result: info?.status === 'Published' ? info.providerPostUrl : null,
+                    resultLabel: title,
                     resultIsLink: true,
-                    onRetry: info?.status === 'Failed' ? () => retryJob(job.id) : undefined,
+                    onCancel: jobCanCancel ? () => cancelJob(job) : undefined,
+                    onRetry: jobCanRetry ? () => retryJob(job, info?.status) : undefined,
+                    retryTitle: jobCanCancel ? 'Cancel and retry this destination' : 'Retry this destination',
                     isSelected: selectedNodeId === nodeKey,
+                    showWaiting: true,
                     handles: [{ type: 'target', position: 'left' }],
                   },
                   ...baseOpts,
@@ -1065,6 +1087,7 @@ export function PostDialog({ blocks: initialBlocks, title, sourceLabel, postLang
                     publishStatus={publishStatus}
                     sixGateState={sixGateState}
                     jobInfos={jobInfos}
+                    title={title}
                     fbContent={fbContent}
                     onCancelRender={cancelRender}
                   />

@@ -32,10 +32,11 @@ export async function withCache<T>(
   key: string,
   ttlMs: number,
   fetcher: () => Promise<T>,
+  opts?: { force?: boolean },
 ): Promise<T> {
   const entry = readEntry<T>(key);
 
-  if (entry && Date.now() - entry.cachedAt < ttlMs) {
+  if (!opts?.force && entry && Date.now() - entry.cachedAt < ttlMs) {
     return entry.data;
   }
 

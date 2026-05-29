@@ -80,8 +80,13 @@ type RawComment = {
 export type RedditComment = { author: string; body: string; score: number; createdAt: number };
 export type RedditReply = RedditComment & { parentIdx: number };
 
-export async function getRedditPostAndComments(subreddit: string, postId: string) {
-  return withCache(`reddit_post_${postId}`, 30 * 60 * 1000, () => _fetchRedditPostAndComments(subreddit, postId));
+export async function getRedditPostAndComments(subreddit: string, postId: string, refresh = false) {
+  return withCache(
+    `reddit_post_${postId}`,
+    30 * 60 * 1000,
+    () => _fetchRedditPostAndComments(subreddit, postId),
+    { force: refresh },
+  );
 }
 
 async function _fetchRedditPostAndComments(subreddit: string, postId: string) {

@@ -33,8 +33,9 @@ export async function fetchRedditThreads(
   postId: string,
   subreddit: string,
   title: string,
+  refresh = false,
 ): Promise<{ blocks: PostBlock[]; contentDto: RedditContentDto; meta: RedditMeta }> {
-  const { post, comments, top2Replies } = await getRedditPostAndComments(subreddit, postId);
+  const { post, comments, top2Replies } = await getRedditPostAndComments(subreddit, postId, refresh);
 
   const uniqueAuthors = [
     ...new Set(

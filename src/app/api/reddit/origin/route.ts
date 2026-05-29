@@ -5,14 +5,14 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
-  const { postId, subreddit, title } = await req.json() as { postId: string; subreddit: string; title: string };
+  const { postId, subreddit, title, refresh } = await req.json() as { postId: string; subreddit: string; title: string; refresh?: boolean };
 
   if (!postId || !subreddit) {
     return NextResponse.json({ error: 'Missing postId or subreddit' }, { status: 400 });
   }
 
   try {
-    const { blocks } = await fetchRedditThreads(postId, subreddit, title);
+    const { blocks } = await fetchRedditThreads(postId, subreddit, title, refresh);
     return NextResponse.json({ blocks });
   } catch (err) {
     return NextResponse.json(
