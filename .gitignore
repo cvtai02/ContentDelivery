@@ -7,6 +7,12 @@ dist
 /.claude/
 /.playwright/
 /.codex/
+/.next/
+
+*.db
+*.db-shm
+*.db-wal
+*.log
 
 npm-debug.log*
 .DS_Store

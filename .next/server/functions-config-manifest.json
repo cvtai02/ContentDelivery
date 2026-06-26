@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "functions": {
-    "/api/threads/scrape": {},
-    "/api/vgen/render": {},
-    "/api/vgen/render/upload": {},
-    "/api/vgen/jobs": {}
-  }
-}
