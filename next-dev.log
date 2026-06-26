@@ -1,0 +1,66 @@
+   ▲ Next.js 15.5.18 (Turbopack)
+   - Local:        http://localhost:3010
+   - Network:      http://192.168.1.243:3010
+
+ ✓ Starting...
+ ✓ Ready in 2.8s
+ ○ Compiling / ...
+ ✓ Compiled / in 9.9s
+ GET / 307 in 11758ms
+ ○ Compiling /api/threads/scrape ...
+ ✓ Compiled /api/threads/scrape in 998ms
+ POST /api/threads/scrape 200 in 14555ms
+ POST /api/threads/scrape 200 in 14086ms
+ ○ Compiling /reddit ...
+ ✓ Compiled /reddit in 3.3s
+ ○ Compiling /zhihu ...
+ GET /reddit 200 in 4024ms
+ GET /reddit 200 in 845ms
+ ✓ Compiled /zhihu in 1507ms
+ GET /zhihu 200 in 2063ms
+ ○ Compiling /api/zhihu/topics ...
+ ✓ Compiled /api/zhihu/topics in 747ms
+ GET /api/zhihu/topics 200 in 1484ms
+ GET /api/section-preferences 200 in 1589ms
+ ○ Compiling /api/zhihu/topic ...
+ ✓ Compiled /api/zhihu/topic in 992ms
+ GET /api/zhihu/topic?topicId=19552430&limit=3 200 in 2631ms
+ GET /api/zhihu/topic?topicId=19551147&limit=3 200 in 2658ms
+ GET /api/zhihu/topic?topicId=19551432&limit=3 200 in 2671ms
+ GET /api/zhihu/topic?topicId=19557876&limit=3 200 in 2703ms
+ GET /api/zhihu/topic?topicId=19550517&limit=3 200 in 2726ms
+ GET /api/zhihu/topic?topicId=19551275&limit=3 200 in 931ms
+ GET /api/zhihu/topic?topicId=19564412&limit=3 200 in 3684ms
+ ○ Compiling /threads ...
+ ✓ Compiled /threads in 1332ms
+ GET /threads 200 in 1920ms
+ GET /threads 200 in 574ms
+ POST /api/threads/scrape 200 in 16708ms
+ GET /reddit 200 in 705ms
+ ○ Compiling /api/reddit/subreddits ...
+ GET /api/section-preferences 200 in 963ms
+ ✓ Compiled /api/reddit/subreddits in 976ms
+ GET /api/reddit/subreddits 200 in 1541ms
+ GET /api/reddit/batch?subreddits=antiwork%2CAskReddit%2Cconfession%2CAmItheAsshole%2Ctifu%2Crelationship_advice%2Ctravel&t=new&limit=1 200 in 563ms
+ GET /threads 200 in 1036ms
+ GET /api/reddit/batch?subreddits=antiwork%2CAskReddit%2Cconfession%2CAmItheAsshole%2Ctifu%2Crelationship_advice%2Ctravel&t=new&limit=1 200 in 1847ms
+ GET /zhihu 200 in 607ms
+ GET /api/zhihu/topics 200 in 825ms
+ GET /api/section-preferences 200 in 848ms
+ GET /api/zhihu/topic?topicId=19557876&limit=3 200 in 1939ms
+ GET /api/zhihu/topic?topicId=19552430&limit=3 200 in 1963ms
+ GET /api/zhihu/topic?topicId=19564412&limit=3 200 in 1980ms
+ GET /api/zhihu/topic?topicId=19550517&limit=3 200 in 1990ms
+ GET /api/zhihu/topic?topicId=19551432&limit=3 200 in 2002ms
+ GET /api/zhihu/topic?topicId=19551147&limit=3 200 in 2017ms
+ GET /api/zhihu/topic?topicId=19551275&limit=3 200 in 900ms
+ GET /threads 200 in 602ms
+ ✓ Compiled /api/vgen/render in 153ms
+ POST /api/vgen/render 502 in 520ms
+ ✓ Compiled /api/vgen/jobs in 158ms
+ GET /api/vgen/jobs?jobId=test 502 in 558ms
+ GET /threads 200 in 590ms
+ POST /api/threads/scrape 200 in 16962ms
+ ✓ Compiled in 75ms
+ ✓ Compiled in 164ms
+[?25h

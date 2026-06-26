@@ -1,0 +1,9 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/api/threads/scrape/route": "/api/threads/scrape",
+  "/api/vgen/jobs/route": "/api/vgen/jobs",
+  "/api/vgen/render/route": "/api/vgen/render",
+  "/api/vgen/render/upload/route": "/api/vgen/render/upload",
+  "/threads/page": "/threads",
+  "/page": "/"
+}

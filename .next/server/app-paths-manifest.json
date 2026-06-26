@@ -1,0 +1,9 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/threads/scrape/route": "app/api/threads/scrape/route.js",
+  "/api/vgen/jobs/route": "app/api/vgen/jobs/route.js",
+  "/api/vgen/render/route": "app/api/vgen/render/route.js",
+  "/api/vgen/render/upload/route": "app/api/vgen/render/upload/route.js",
+  "/threads/page": "app/threads/page.js",
+  "/page": "app/page.js"
+}
