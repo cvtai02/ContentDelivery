@@ -1,3 +1,5 @@
+import { redditFetch } from '@/lib/reddit-auth';
+
 export async function fetchAsDataUrl(url: string): Promise<string | null> {
   try {
     const controller = new AbortController();
@@ -23,10 +25,7 @@ export async function getRedditAvatar(username: string): Promise<string | null> 
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4000);
-    const res = await fetch(`https://www.reddit.com/user/${username}/about.json`, {
-      headers: { 'User-Agent': 'MyNews/1.0' },
-      signal: controller.signal,
-    });
+    const res = await redditFetch(`/user/${username}/about.json`, { signal: controller.signal });
     clearTimeout(timer);
     if (!res.ok) return null;
     const data = await res.json();

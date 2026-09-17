@@ -1,0 +1,16 @@
+
+> mynews@0.1.0 dev
+> next dev --turbopack --port 3010
+
+   [1m[38;2;173;127;168m▲ Next.js 15.5.18[39m[22m (Turbopack)
+   - Local:        http://localhost:3010
+   - Network:      http://192.168.1.32:3010
+
+ [32m[1m✓[22m[39m Starting...
+ [32m[1m✓[22m[39m Ready in 6.4s
+ [37m[1m○[22m[39m Compiling /api/settings ...
+ [32m[1m✓[22m[39m Compiled /api/settings in 4.6s
+ GET /api/settings [32m200[39m in 593ms
+ POST /api/settings [32m200[39m in 364ms
+ GET /api/settings [32m200[39m in 345ms
+[?25h

@@ -9,6 +9,8 @@ type Config = {
   appId: string;
   appSecret: string;
   targets: MaskedTarget[];
+  redditClientId: string;
+  redditClientSecret: string;
 };
 
 const AUDIO_KEY = 'audio';
@@ -66,6 +68,13 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [tokenMessage, setTokenMessage] = useState('');
   const [tokenError, setTokenError] = useState('');
 
+  // Reddit credentials section
+  const [redditClientId, setRedditClientId] = useState('');
+  const [redditClientSecret, setRedditClientSecret] = useState('');
+  const [redditLoading, setRedditLoading] = useState(false);
+  const [redditMessage, setRedditMessage] = useState('');
+  const [redditError, setRedditError] = useState('');
+
   // Audio prompt section
   const [audioPrompt, setAudioPrompt] = useState('');
   const [audioDefault, setAudioDefault] = useState('');
@@ -80,6 +89,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     ]).then(([d, pd]: [Config, { prompts: Record<string, string>; defaults: Record<string, string> }]) => {
       setConfig(d);
       setAppId(d.appId ?? '');
+      setRedditClientId(d.redditClientId ?? '');
       const val = pd.prompts[AUDIO_KEY] ?? '';
       setAudioPrompt(val);
       setAudioSaved(val);
@@ -110,13 +120,34 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     setCredMessage('');
     try {
       const data = await postJson<Config>('/api/settings', { appId: appId || undefined, appSecret: appSecret || undefined });
-      setConfig({ appId: data.appId, appSecret: data.appSecret, targets: data.targets });
+      setConfig(data);
       setAppSecret('');
       setCredMessage('Đã lưu.');
     } catch (err) {
       setCredError(err instanceof Error ? err.message : 'Lỗi không xác định');
     } finally {
       setCredLoading(false);
+    }
+  }
+
+  async function saveRedditCreds(e: React.FormEvent) {
+    e.preventDefault();
+    setRedditLoading(true);
+    setRedditError('');
+    setRedditMessage('');
+    try {
+      const data = await postJson<Config>('/api/settings', {
+        redditClientId: redditClientId || undefined,
+        redditClientSecret: redditClientSecret || undefined,
+      });
+      setConfig(data);
+      setRedditClientId(data.redditClientId ?? '');
+      setRedditClientSecret('');
+      setRedditMessage('Đã lưu.');
+    } catch (err) {
+      setRedditError(err instanceof Error ? err.message : 'Lỗi không xác định');
+    } finally {
+      setRedditLoading(false);
     }
   }
 
@@ -131,7 +162,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         '/api/settings',
         { userToken: userToken || undefined, pageId: pageId || undefined },
       );
-      setConfig({ appId: data.appId, appSecret: data.appSecret, targets: data.targets });
+      setConfig(data);
       setUserToken('');
       setPageId('');
       if (data.availablePages && data.availablePages.length > 1) {
@@ -205,6 +236,38 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               className="rounded-lg bg-surface border border-divider px-4 py-1.5 text-xs font-semibold text-primary hover:border-accent transition-colors disabled:opacity-50 disabled:cursor-wait cursor-pointer"
             >
               {credLoading ? 'Đang lưu…' : 'Lưu'}
+            </button>
+          </div>
+        </form>
+
+        <hr className="border-divider" />
+
+        {/* Reddit credentials (app-only OAuth) */}
+        <form onSubmit={saveRedditCreds} className="flex flex-col gap-3">
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide">Reddit OAuth (app-only)</p>
+          <Field
+            label="Client ID"
+            value={redditClientId}
+            onChange={setRedditClientId}
+            placeholder="abcDEF123…"
+            hint="reddit.com/prefs/apps → create app (type: script) → ID under the app name"
+          />
+          <Field
+            label="Client Secret"
+            value={redditClientSecret}
+            onChange={setRedditClientSecret}
+            placeholder={config?.redditClientSecret || 'Để trống nếu không đổi'}
+            type="password"
+          />
+          {redditError && <p className="text-xs text-fall">{redditError}</p>}
+          {redditMessage && <p className="text-xs text-accent">{redditMessage}</p>}
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              disabled={redditLoading}
+              className="rounded-lg bg-surface border border-divider px-4 py-1.5 text-xs font-semibold text-primary hover:border-accent transition-colors disabled:opacity-50 disabled:cursor-wait cursor-pointer"
+            >
+              {redditLoading ? 'Đang lưu…' : 'Lưu'}
             </button>
           </div>
         </form>

@@ -17,13 +17,19 @@ async function graphGet(url: string) {
   return data;
 }
 
-export function GET() {
+function currentConfig() {
   const targets = listFacebookTargets();
-  return NextResponse.json({
+  return {
     appId: getSetting('FACEBOOK_APP_ID'),
     appSecret: mask(getSetting('FACEBOOK_APP_SECRET')),
     targets: targets.map((t) => ({ id: t.id, name: t.name, token: mask(t.token) })),
-  });
+    redditClientId: getSetting('REDDIT_CLIENT_ID'),
+    redditClientSecret: mask(getSetting('REDDIT_CLIENT_SECRET')),
+  };
+}
+
+export function GET() {
+  return NextResponse.json(currentConfig());
 }
 
 export async function POST(req: NextRequest) {
@@ -32,21 +38,20 @@ export async function POST(req: NextRequest) {
     appSecret?: string;
     userToken?: string;
     pageId?: string;
+    redditClientId?: string;
+    redditClientSecret?: string;
   };
 
   if (body.appId?.trim()) setSetting('FACEBOOK_APP_ID', body.appId.trim());
   if (body.appSecret?.trim()) setSetting('FACEBOOK_APP_SECRET', body.appSecret.trim());
+  if (body.redditClientId?.trim()) setSetting('REDDIT_CLIENT_ID', body.redditClientId.trim());
+  if (body.redditClientSecret?.trim()) setSetting('REDDIT_CLIENT_SECRET', body.redditClientSecret.trim());
 
   const appId = getSetting('FACEBOOK_APP_ID');
   const appSecret = getSetting('FACEBOOK_APP_SECRET');
 
   if (!body.userToken?.trim()) {
-    const targets = listFacebookTargets();
-    return NextResponse.json({
-      appId,
-      appSecret: mask(appSecret),
-      targets: targets.map((t) => ({ id: t.id, name: t.name, token: mask(t.token) })),
-    });
+    return NextResponse.json(currentConfig());
   }
 
   if (!appId || !appSecret) {
@@ -69,11 +74,8 @@ export async function POST(req: NextRequest) {
 
     upsertFacebookTarget({ id: page.id, name: page.name, token: page.access_token });
 
-    const targets = listFacebookTargets();
     return NextResponse.json({
-      appId,
-      appSecret: mask(appSecret),
-      targets: targets.map((t) => ({ id: t.id, name: t.name, token: mask(t.token) })),
+      ...currentConfig(),
       added: page.name,
       availablePages: pages.map((p) => ({ id: p.id, name: p.name })),
     });

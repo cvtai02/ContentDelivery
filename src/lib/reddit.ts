@@ -1,6 +1,5 @@
 import { withCache } from '@/lib/cache';
-
-const REDDIT_UA = 'Hot-post-every-day/1.0 by cvtai105';
+import { redditFetch } from '@/lib/reddit-auth';
 
 // ── Hot posts (for listing) ────────────────────────────────────────────────
 
@@ -38,10 +37,7 @@ export async function getHotPosts(subreddit: string, { t = 'hot', limit = 3 }: {
     const params = new URLSearchParams({ limit: String(limit) });
     if (t !== 'hot') params.set('t', t);
 
-    const res = await fetch(
-      `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/${endpoint}.json?${params}`,
-      { headers: { 'User-Agent': REDDIT_UA } },
-    );
+    const res = await redditFetch(`/r/${encodeURIComponent(subreddit)}/${endpoint}.json?${params}`);
 
     if (!res.ok) throw new Error(`Failed to fetch Reddit posts: ${res.status}`);
 
@@ -90,10 +86,7 @@ export async function getRedditPostAndComments(subreddit: string, postId: string
 }
 
 async function _fetchRedditPostAndComments(subreddit: string, postId: string) {
-  const res = await fetch(
-    `https://www.reddit.com/r/${subreddit}/comments/${postId}.json?limit=10&sort=top`,
-    { headers: { 'User-Agent': REDDIT_UA } },
-  );
+  const res = await redditFetch(`/r/${subreddit}/comments/${postId}.json?limit=10&sort=top`);
   if (!res.ok) throw new Error(`Reddit API error: ${res.status}`);
 
   const [postListing, commentsListing] = await res.json() as [

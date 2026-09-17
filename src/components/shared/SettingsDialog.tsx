@@ -8,6 +8,8 @@ interface Settings {
   appId: string;
   appSecret: string;
   targets: Target[];
+  redditClientId: string;
+  redditClientSecret: string;
 }
 
 interface Props {
@@ -20,6 +22,8 @@ export default function SettingsDialog({ open, onClose }: Props) {
   const [appId, setAppId] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [userToken, setUserToken] = useState('');
+  const [redditClientId, setRedditClientId] = useState('');
+  const [redditClientSecret, setRedditClientSecret] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -34,6 +38,8 @@ export default function SettingsDialog({ open, onClose }: Props) {
         setAppId(data.appId ?? '');
         setAppSecret('');
         setUserToken('');
+        setRedditClientId(data.redditClientId ?? '');
+        setRedditClientSecret('');
         setTimeout(() => inputRef.current?.focus(), 50);
       })
       .catch(() => setMessage({ text: 'Không tải được cấu hình.', ok: false }));
@@ -55,6 +61,8 @@ export default function SettingsDialog({ open, onClose }: Props) {
           appId: appId || undefined,
           appSecret: appSecret || undefined,
           userToken: userToken || undefined,
+          redditClientId: redditClientId || undefined,
+          redditClientSecret: redditClientSecret || undefined,
         }),
       });
       const data = await res.json();
@@ -62,6 +70,7 @@ export default function SettingsDialog({ open, onClose }: Props) {
       setSettings(data);
       setAppSecret('');
       setUserToken('');
+      setRedditClientSecret('');
       setMessage({ text: data.added ? `Đã thêm trang: ${data.added}` : 'Đã lưu cấu hình.', ok: true });
     } catch (err) {
       setMessage({ text: err instanceof Error ? err.message : 'Lưu thất bại.', ok: false });
@@ -138,6 +147,43 @@ export default function SettingsDialog({ open, onClose }: Props) {
                 placeholder="Dán token ngắn hạn để thêm trang"
                 className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Reddit OAuth (app-only)</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Client ID
+                </label>
+                <input
+                  type="text"
+                  value={redditClientId}
+                  onChange={(e) => setRedditClientId(e.target.value)}
+                  placeholder="abcDEF123…"
+                  className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-[11px] text-gray-400">
+                  reddit.com/prefs/apps → tạo app loại &quot;script&quot; → ID nằm dưới tên app
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Client Secret{' '}
+                  {settings?.redditClientSecret && (
+                    <span className="font-normal text-gray-400">({settings.redditClientSecret})</span>
+                  )}
+                </label>
+                <input
+                  type="password"
+                  value={redditClientSecret}
+                  onChange={(e) => setRedditClientSecret(e.target.value)}
+                  placeholder="Để trống nếu không đổi"
+                  className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
           </div>
 
